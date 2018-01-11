@@ -7,10 +7,12 @@ struct Stats {
     path: PathBuf,
     words: u32,
     paragraphs: u32,
+    longest_paragraph: u32,
 }
 
 impl Stats {
     fn from_path<T: Into<PathBuf>>(path: T) -> io::Result<Self> {
+        use std::cmp;
         use std::fs::File;
         use std::io::{BufRead, BufReader};
 
@@ -21,13 +23,16 @@ impl Stats {
             path,
             words: 0,
             paragraphs: 0,
+            longest_paragraph: 0,
         };
 
         for line in file.lines() {
             if let Ok(line) = line {
                 if !line.starts_with('#') && !line.is_empty() {
+                    let words = line.split_whitespace().count() as u32;
+                    stats.longest_paragraph = cmp::max(words, stats.longest_paragraph);
                     stats.paragraphs += 1;
-                    stats.words += line.split_whitespace().count() as u32;
+                    stats.words += words;
                 }
             }
         }
@@ -43,7 +48,11 @@ impl fmt::Display for Stats {
             .and_then(|name| name.to_str())
             .unwrap_or("unknown");
 
-        write!(f, "{}: {}, {}", filename, self.words, self.paragraphs)
+        write!(
+            f,
+            "{}: {}, {} ({})",
+            filename, self.words, self.paragraphs, self.longest_paragraph
+        )
     }
 }
 

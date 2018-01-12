@@ -1,20 +1,33 @@
 use std::env;
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
 
 struct Stats {
-    path: PathBuf,
+    path: String,
     words: u32,
     paragraphs: u32,
     longest_paragraph: u32,
 }
 
 impl Stats {
-    fn from_path<T: Into<PathBuf>>(path: T) -> io::Result<Self> {
+    fn from_path<T: Into<String>>(path: T) -> io::Result<Self> {
         use std::cmp;
         use std::fs::File;
         use std::io::{BufRead, BufReader};
+
+        fn is_valid_line(s: &str) -> bool {
+            !s.is_empty() && s.starts_with(|c| {
+                    c == '"'        // Dialog
+                    || c == '.'     // Ellipsis
+                    || c == '*'     // Italics
+
+                    // Any other letter known to man.
+                    || match (c as u8) & !32 {
+                        b'A'...b'Z' => true,
+                        _ => false,
+                    }
+                })
+        }
 
         let path = path.into();
         let file = BufReader::new(File::open(&path)?);
@@ -28,7 +41,7 @@ impl Stats {
 
         for line in file.lines() {
             if let Ok(line) = line {
-                if !line.starts_with('#') && !line.is_empty() {
+                if is_valid_line(&line) {
                     let words = line.split_whitespace().count() as u32;
                     stats.longest_paragraph = cmp::max(words, stats.longest_paragraph);
                     stats.paragraphs += 1;
@@ -43,7 +56,10 @@ impl Stats {
 
 impl fmt::Display for Stats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let filename = self.path
+        use std::path::Path;
+
+        let path: &Path = self.path.as_ref();
+        let filename = path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("unknown");

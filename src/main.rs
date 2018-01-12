@@ -64,6 +64,6 @@ fn main() {
             println!("{}", stats);
         }
     }
-    
-    println!("Total wordcount: {}", total_words);
+
+    println!("{}", total_words);
 }

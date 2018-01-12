@@ -15,13 +15,22 @@ impl Stats {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
 
+        // This works to ignore comments because of the way my comments are usually formatted:
+        //
+        // <!--
+        //
+        //     <comment>
+        //     <text>
+        //     <here>
+        //
+        // -->
         fn is_valid_line(s: &str) -> bool {
             !s.is_empty() && s.starts_with(|c| {
                     c == '"'        // Dialog
                     || c == '.'     // Ellipsis
                     || c == '*'     // Italics
 
-                    // Any other letter known to man.
+                    // Any other letter known to man. Lucky there are only 26.
                     || match (c as u8) & !32 {
                         b'A'...b'Z' => true,
                         _ => false,

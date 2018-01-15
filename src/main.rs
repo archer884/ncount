@@ -29,11 +29,9 @@ impl Stats {
                     c == '"'        // Dialog
                     || c == '.'     // Ellipsis
                     || c == '*'     // Italics
-
-                    // Any other letter known to man. Lucky there are only 26.
-                    || match (c as u8) & !32 {
-                        b'A'...b'Z' => true,
-                        _ => false,
+                    || {
+                        let c = (c as u8) & !32;
+                        c >= b'A' && c <= b'Z'
                     }
                 })
         }

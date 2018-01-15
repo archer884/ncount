@@ -26,14 +26,14 @@ impl Stats {
         // -->
         fn is_valid_line(s: &str) -> bool {
             !s.is_empty() && s.starts_with(|c| {
-                    c == '"'        // Dialog
-                    || c == '.'     // Ellipsis
-                    || c == '*'     // Italics
-                    || {
-                        let c = (c as u8) & !32;
-                        c >= b'A' && c <= b'Z'
-                    }
-                })
+                c == '"'        // Dialog
+                || c == '.'     // Ellipsis
+                || c == '*'     // Italics
+                || {
+                    let c = (c as u8) & !32;
+                    c >= b'A' && c <= b'Z'
+                }
+            })
         }
 
         let path = path.into();
@@ -66,8 +66,7 @@ impl fmt::Display for Stats {
         use std::path::Path;
 
         let path: &Path = self.path.as_ref();
-        let filename = path
-            .file_name()
+        let filename = path.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("unknown");
 

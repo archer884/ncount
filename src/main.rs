@@ -72,7 +72,7 @@ impl fmt::Display for Stats {
 
         write!(
             f,
-            "{}: {}, {} ({})",
+            "{}\t{:6} {:4} ({})",
             filename, self.words, self.paragraphs, self.longest_paragraph
         )
     }

@@ -1,3 +1,5 @@
+mod split_words;
+
 use std::env;
 use std::fmt;
 use std::io;
@@ -11,6 +13,7 @@ struct Stats {
 
 impl Stats {
     fn from_path<T: Into<String>>(path: T) -> io::Result<Self> {
+        use split_words::SplitWords;
         use std::cmp;
         use std::fs::File;
         use std::io::{BufRead, BufReader};
@@ -49,7 +52,7 @@ impl Stats {
         for line in file.lines() {
             if let Ok(line) = line {
                 if is_valid_line(&line) {
-                    let words = line.split_whitespace().count() as u32;
+                    let words = line.split_words().count() as u32;
                     stats.longest_paragraph = cmp::max(words, stats.longest_paragraph);
                     stats.paragraphs += 1;
                     stats.words += words;

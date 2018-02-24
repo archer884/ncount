@@ -24,6 +24,9 @@ impl Stats {
         //     <here>
         //
         // -->
+        //
+        // For this to work, comments must start new lines rather than appearing on existing 
+        // lines.
         fn is_valid_line(s: &str) -> bool {
             !s.is_empty() && s.starts_with(|c| {
                 c == '"'        // Dialog

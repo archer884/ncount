@@ -51,7 +51,7 @@ impl<'a> Iterator for WordIterator<'a> {
 
 #[inline] // Is this really necessary?
 fn is_break_char(c: char) -> bool {
-    c.is_whitespace() || c.is_ascii_punctuation()
+    c.is_whitespace() || (c.is_ascii_punctuation() && c != '\'')
 }
 
 #[cfg(test)]
@@ -66,11 +66,19 @@ mod tests {
     yesterday--a wizened hulk, stripped of bark and gray with age--waited there, pointing to \
     the right. She had gone left yesterday.";
 
+    static TEXT_WITH_ABBREVIATION: &str = "Don't look now, but this may break.";
+
     #[test]
     fn count_is_correct() {
         let count = TEXT.split_words().count();
 
         // Expected count provided by Word.
         assert_eq!(86, count);
+    }
+
+    #[test]
+    fn abbreviations_are_counted_correctly() {
+        let count = TEXT_WITH_ABBREVIATION.split_words().count();
+        assert_eq!(7, count);
     }
 }

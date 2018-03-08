@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io;
+use std::path::Path;
 
 pub struct Stats {
     path: String,
@@ -9,7 +10,7 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn from_path<T: Into<String>>(path: T) -> io::Result<Self> {
+    pub fn from_path<T: AsRef<Path>>(path: T) -> io::Result<Self> {
         use split_words::SplitWords;
         use std::cmp;
         use std::fs::File;
@@ -39,11 +40,9 @@ impl Stats {
             })
         }
 
-        let path = path.into();
         let file = BufReader::new(File::open(&path)?);
-
         let mut stats = Stats {
-            path,
+            path: format!("{}", path.as_ref().display()),
             words: 0,
             paragraphs: 0,
             longest_paragraph: 0,

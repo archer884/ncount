@@ -78,8 +78,8 @@ impl fmt::Display for Stats {
 
         write!(
             f,
-            "{}\t{}\t{}\t({})",
-            filename, self.words, self.paragraphs, self.longest_paragraph
+            "{}\t{}\t{}\t({} / {})",
+            filename, self.words, self.paragraphs, self.words / self.paragraphs, self.longest_paragraph
         )
     }
 }

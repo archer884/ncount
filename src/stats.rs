@@ -26,7 +26,7 @@ impl Stats {
         //
         // -->
         //
-        // For this to work, comments must start new lines rather than appearing on existing 
+        // For this to work, comments must start new lines rather than appearing on existing
         // lines.
         fn is_valid_line(s: &str) -> bool {
             !s.is_empty() && s.starts_with(|c| {
@@ -79,7 +79,11 @@ impl fmt::Display for Stats {
         write!(
             f,
             "{}\t{}\t{}\t({} / {})",
-            filename, self.words, self.paragraphs, self.words / self.paragraphs, self.longest_paragraph
+            filename,
+            self.words,
+            self.paragraphs,
+            self.words / self.paragraphs,
+            self.longest_paragraph
         )
     }
 }

@@ -13,7 +13,7 @@ impl PathProvider {
     pub fn new() -> Self {
         Self {
             args: env::args().skip(1),
-            glob: None
+            glob: None,
         }
     }
 
@@ -33,7 +33,6 @@ impl Iterator for PathProvider {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_globbed_path() {
-
             // No globbed paths available.
             None => match self.args.next() {
                 None => None,
@@ -47,7 +46,6 @@ impl Iterator for PathProvider {
 
             // Return globbed path.
             path => path,
-            
         }
     }
 }

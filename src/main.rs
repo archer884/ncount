@@ -4,8 +4,8 @@ mod path;
 mod split_words;
 mod stats;
 
-use stats::Stats;
 use path::PathProvider;
+use stats::Stats;
 
 fn main() {
     let mut total_words = 0;

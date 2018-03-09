@@ -1,8 +1,8 @@
-use glob::Paths;
 use glob::glob as deglob;
+use glob::Paths;
 use std::env::{self, Args};
-use std::path::PathBuf;
 use std::iter::Skip;
+use std::path::PathBuf;
 
 pub struct PathProvider {
     args: Skip<Args>,

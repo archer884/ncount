@@ -5,3 +5,4 @@ authors = ["J/A <archer884@gmail.com>"]
 
 [dependencies]
 glob = "*"
+regex = "*"

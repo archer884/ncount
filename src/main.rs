@@ -1,20 +1,20 @@
 extern crate glob;
+extern crate regex;
 
 mod path;
 mod split_words;
 mod stats;
 
 use path::PathProvider;
-use stats::Stats;
+use stats::StatsCollector;
 
 fn main() {
-    let mut total_words = 0;
+    let mut collector = StatsCollector::new();
     for path in PathProvider::new() {
-        if let Ok(stats) = Stats::from_path(path) {
-            total_words += stats.words();
+        if let Ok(stats) = collector.from_path(path) {
             println!("{}", stats);
         }
     }
 
-    println!("{}", total_words);
+    println!("{}", collector.total_words());
 }

@@ -1,20 +1,24 @@
 extern crate glob;
 extern crate regex;
 
+mod lex;
 mod path;
 mod split_words;
 mod stats;
 
 use path::PathProvider;
-use stats::StatsCollector;
+use stats::Collector;
+use std::process;
 
 fn main() {
-    let mut collector = StatsCollector::new();
+    let mut collector = Collector::new();
+
     for path in PathProvider::new() {
-        if let Ok(stats) = collector.from_path(path) {
-            println!("{}", stats);
+        if let Err(e) = collector.push_path(path) {
+            eprintln!("{}", e);
+            process::exit(1);
         }
     }
 
-    println!("{}", collector.total_words());
+    println!("{}", collector);
 }

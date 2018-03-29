@@ -27,18 +27,20 @@ impl Stats {
 
 pub struct Collector {
     lexer: Lexer,
-    headings: Vec<(String, Stats)>,
+    headings: Vec<(Option<String>, Stats)>,
     total_words: u32,
     max_heading_width: usize,
 }
 
 impl Collector {
     pub fn new() -> Self {
+        // We set max_heading_width to 7 here because the minimum heading width (for an empty 
+        // heading) is the width of the string "unknown"
         Collector {
             lexer: Lexer::new(),
             headings: Vec::new(),
             total_words: 0,
-            max_heading_width: 0,
+            max_heading_width: 7,
         }
     }
 
@@ -62,7 +64,7 @@ impl Collector {
                 Ok(Lexeme::Heading(heading)) => match section.take() {
                     None => section = Some(format_heading(&heading)),
                     Some(previous_section) => {
-                        self.headings.push((previous_section, stats));
+                        self.headings.push((Some(previous_section), stats));
                         section = Some(heading);
                         stats = Stats::default();
                     }
@@ -79,8 +81,7 @@ impl Collector {
                 .unwrap_or(0);
 
             self.total_words += stats.words;
-            self.headings
-                .push((section.unwrap_or_else(|| String::from("unknown")), stats));
+            self.headings.push((section, stats));
         }
 
         Ok(())
@@ -106,7 +107,7 @@ impl fmt::Display for Collector {
             writeln!(
                 f,
                 "{:width$}{:5}{:5}{:5}{:4}",
-                heading,
+                heading.as_ref().map(AsRef::as_ref).unwrap_or("unknown"),
                 stats.words,
                 stats.paragraphs,
                 average_paragraph(stats),

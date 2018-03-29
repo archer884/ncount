@@ -47,7 +47,7 @@ impl Lexer {
     }
 
     fn lex_string(&self, s: String) -> Option<Lexeme> {
-        let s = self.comments.replace(s.as_ref(), "");
+        let s = self.comments.replace(&s, "");
 
         if s.trim().is_empty() {
             return None;

@@ -27,18 +27,18 @@ impl Stats {
 
 pub struct Collector {
     lexer: Lexer,
-    headings: Vec<(Option<String>, Stats)>,
+    sections: Vec<(Option<String>, Stats)>,
     total_words: u32,
     max_heading_width: usize,
 }
 
 impl Collector {
     pub fn new() -> Self {
-        // We set max_heading_width to 7 here because the minimum heading width (for an empty 
+        // We set max_heading_width to 7 here because the minimum heading width (for an empty
         // heading) is the width of the string "unknown"
         Collector {
             lexer: Lexer::new(),
-            headings: Vec::new(),
+            sections: Vec::new(),
             total_words: 0,
             max_heading_width: 7,
         }
@@ -61,27 +61,37 @@ impl Collector {
             match lexeme {
                 Err(e) => return Err(e),
 
-                Ok(Lexeme::Heading(heading)) => match section.take() {
-                    None => section = Some(format_heading(&heading)),
-                    Some(previous_section) => {
-                        self.headings.push((Some(previous_section), stats));
-                        section = Some(heading);
-                        stats = Stats::default();
+                Ok(Lexeme::Heading(heading)) => {
+                    self.max_heading_width = cmp::max(heading.len(), self.max_heading_width);
+
+                    match section.take() {
+                        // We've just found a heading and we didn't already have one. Any text
+                        // that has already appeared should not be stored under this heading name,
+                        // so we'll push that under an unknown heading name. This case ought to be
+                        // pretty rare.
+                        None => {
+                            section = Some(format_heading(&heading));
+                            self.sections.push((None, stats));
+                            stats = Stats::default();
+                        }
+
+                        // The usual header case; we push the current heading name and accumulated
+                        // stats.
+                        Some(previous_section) => {
+                            self.sections.push((Some(previous_section), stats));
+                            section = Some(heading);
+                            stats = Stats::default();
+                        }
                     }
-                },
+                }
 
                 Ok(Lexeme::Paragraph(paragraph)) => stats.apply(&paragraph),
             }
         }
 
         if !stats.is_empty() {
-            self.max_heading_width = section
-                .as_ref()
-                .map(|heading| cmp::max(self.max_heading_width, heading.len()))
-                .unwrap_or(0);
-
             self.total_words += stats.words;
-            self.headings.push((section, stats));
+            self.sections.push((section, stats));
         }
 
         Ok(())
@@ -103,7 +113,7 @@ impl fmt::Display for Collector {
             }
         }
 
-        for (ref heading, ref stats) in &self.headings {
+        for (ref heading, ref stats) in &self.sections {
             writeln!(
                 f,
                 "{:width$}{:5}{:5}{:5}{:4}",

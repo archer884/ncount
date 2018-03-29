@@ -22,10 +22,12 @@ Chapter 2.4   468   14   33  76
 Total words: 9760
 ```
 
-Because we're using the `glob` crate, the behavior of the glob there is the same between Windows and macOS. The output format is basically this:
+Because we're using the `glob` crate, the behavior of the glob there is the same between Windows and macOS. The output columns present the following information:
 
-```shell
-<section_name>  <word_count>  <paragraph_count>  <average_paragraph_length>  <max_paragraph_length>
-```
+1. Section name
+2. Word count
+3. Paragraph count
+4. Average paragraph length
+5. Max paragraph length
 
 Each of these properties comes in handy for me in some way. Obviously, I don't care about the number of characters or bytes or whatever.

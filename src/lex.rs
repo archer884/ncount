@@ -68,12 +68,9 @@ impl Lexer {
 // Ignore anything that's not text. Text can start with these legal characters.
 fn is_valid_line(s: &str) -> bool {
     !s.is_empty() && s.starts_with(|c| {
-        c == '"'        // Dialog
-        || c == '.'     // Ellipsis
-        || c == '*'     // Italics
-        || {
-            let c = (c as u8) & !32;
-            c >= b'A' && c <= b'Z'
-        }
+        c == '"'                // Dialog
+        || c == '.'             // Ellipsis
+        || c == '*'             // Italics
+        || c.is_alphabetic()    // Letters
     })
 }

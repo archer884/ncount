@@ -14,8 +14,8 @@ fn main() {
     let mut collector = Collector::new();
 
     for path in PathProvider::new() {
-        if let Err(e) = collector.push_path(path) {
-            eprintln!("{}", e);
+        if let Err(e) = collector.push_path(&path) {
+            eprintln!("Failed to load path:\n  {}\n  {}", path.display(), e);
             process::exit(1);
         }
     }

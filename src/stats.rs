@@ -42,7 +42,7 @@ impl Collector {
         }
     }
 
-    pub fn push_path<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
+    pub fn push_path(&mut self, path: impl AsRef<Path>) -> Result<()> {
         use std::fs::File;
 
         fn format_heading(heading: &str) -> String {

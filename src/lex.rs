@@ -21,7 +21,7 @@ impl<'a, T: BufRead> Iterator for Lexemes<'a, T> {
             match self.text.read_line(&mut buf) {
                 Err(e) => return Some(Err(e)),
                 Ok(0) => return None,
-                Ok(_) => if let Some(lexeme) = self.lexer.from_string(buf) {
+                Ok(_) => if let Some(lexeme) = self.lexer.lex_string(buf) {
                     return Some(Ok(lexeme));
                 } else {
                     continue;
@@ -42,18 +42,13 @@ impl Lexer {
         Self { comments }
     }
 
-    pub fn lexemes<'a, R: 'a>(&'a self, text: R) -> Lexemes<'a, R>
-    where
-        R: BufRead,
-    {
-        Lexemes {
-            lexer: self,
-            text: text,
-        }
+    pub fn lexemes(&self, text: impl BufRead) -> Lexemes<impl BufRead> {
+        Lexemes { lexer: self, text }
     }
 
-    fn from_string(&self, s: String) -> Option<Lexeme> {
-        let s = self.comments.replace(&s, "");
+    fn lex_string(&self, s: String) -> Option<Lexeme> {
+        let s = self.comments.replace(s.as_ref(), "");
+
         if s.trim().is_empty() {
             return None;
         }
@@ -66,7 +61,7 @@ impl Lexer {
             return Some(Lexeme::Paragraph(s.into()));
         }
 
-        return None;
+        None
     }
 }
 

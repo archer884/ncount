@@ -37,7 +37,8 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new() -> Self {
-        let comments = Regex::new(r#"<[^<]*>"#).expect("Failed to initialize comment pattern");
+        let comments = Regex::new(r#"<[^<]*>"#)
+            .expect("Failed to initialize comment pattern");
 
         Self { comments }
     }
@@ -81,4 +82,14 @@ fn is_valid_line(s: &str) -> bool {
         || c == '*'             // Italics
         || c.is_alphabetic()    // Letters
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use lex::Lexer;
+
+    #[test]
+    fn can_create_lexer() {
+        Lexer::new();
+    }
 }

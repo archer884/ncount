@@ -71,8 +71,10 @@ impl Collector {
                         // pretty rare.
                         None => {
                             section = Some(format_heading(&heading));
-                            self.sections.push((None, stats));
-                            stats = Stats::default();
+                            if !stats.is_empty() {
+                                self.sections.push((None, stats));
+                                stats = Stats::default();
+                            }
                         }
 
                         // The usual header case; we push the current heading name and accumulated

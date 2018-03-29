@@ -1,5 +1,6 @@
 use lex::{Lexeme, Lexer};
 use split_words::SplitWords;
+use std::cmp;
 use std::fmt;
 use std::io::{BufReader, Result};
 use std::path::Path;
@@ -17,8 +18,6 @@ impl Stats {
     }
 
     fn apply(&mut self, s: &str) {
-        use std::cmp;
-
         let words = s.split_words().count() as u32;
         self.longest_paragraph = cmp::max(words, self.longest_paragraph);
         self.paragraphs += 1;
@@ -44,7 +43,6 @@ impl Collector {
     }
 
     pub fn push_path<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
-        use std::cmp;
         use std::fs::File;
 
         fn format_heading(heading: &str) -> String {

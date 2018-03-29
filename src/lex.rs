@@ -65,9 +65,17 @@ impl Lexer {
     }
 }
 
-// Ignore anything that's not text. Text can start with these legal characters.
+/// Validates a line.
+/// 
+/// We're not interested in blank lines (which appear between paragraphs), or word counts of
+/// headers, comments, asides, etc. Real paragraphs start with one of the following:
+/// 
+/// - Quotation marks, for dialog
+/// - Ellipses, for continuations
+/// - Italics, for emphasis or thoughts or whatever
+/// - Letters, for normal text.
 fn is_valid_line(s: &str) -> bool {
-    !s.is_empty() && s.starts_with(|c| {
+    !s.is_empty() && s.starts_with(|c: char| {
         c == '"'                // Dialog
         || c == '.'             // Ellipsis
         || c == '*'             // Italics

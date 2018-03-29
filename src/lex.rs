@@ -47,8 +47,15 @@ impl Lexer {
     }
 
     fn lex_string(&self, s: String) -> Option<Lexeme> {
-        let s = self.comments.replace(&s, "");
+        use std::borrow::Cow;
 
+        let s = {
+            match self.comments.replace(&s, "") {
+                Cow::Borrowed(_) => None,
+                Cow::Owned(modified) => Some(modified),
+            }
+        }.unwrap_or(s);
+        
         if s.trim().is_empty() {
             return None;
         }

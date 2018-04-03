@@ -11,13 +11,13 @@ impl<T: AsRef<str>> SplitWords for T {
     }
 }
 
-pub struct WordIterator<'a> {
+pub struct WordIterator<'source> {
     idx: usize,
-    source: &'a str,
+    source: &'source str,
 }
 
-impl<'a> Iterator for WordIterator<'a> {
-    type Item = &'a str;
+impl<'source> Iterator for WordIterator<'source> {
+    type Item = &'source str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.source.len() {

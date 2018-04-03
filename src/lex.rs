@@ -161,7 +161,7 @@ fn bounded_lexeme(Bound { kind, left, right }: Bound, s: &str) -> Lexeme {
 }
 
 fn is_valid_line(s: &str) -> bool {
-    !s.is_empty() && s.starts_with(|c: char| {
+    s.starts_with(|c: char| {
         c == '"'             // Dialog
         || c == '.'          // Ellipsis
         || c == '*'          // Italics

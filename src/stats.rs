@@ -17,11 +17,10 @@ impl Stats {
         self.words == 0 && self.paragraphs == 0 && self.longest_paragraph == 0
     }
 
-    fn apply(&mut self, s: &str) {
-        let words = s.split_words().count() as u32;
-        self.longest_paragraph = cmp::max(words, self.longest_paragraph);
+    fn push_paragraph(&mut self, paragraph: u32) {
+        self.longest_paragraph = cmp::max(paragraph, self.longest_paragraph);
         self.paragraphs += 1;
-        self.words += words;
+        self.words += paragraph;
     }
 }
 
@@ -52,12 +51,13 @@ impl Collector {
         }
 
         let file = File::open(path).map(BufReader::new)?;
-        let lexemes = self.lexer.lexemes(file);
 
+        let mut lexemes = self.lexer.lexemes(file);
         let mut section = None;
         let mut stats = Stats::default();
+        let mut paragraph = 0;
 
-        for lexeme in lexemes {
+        while let Some(lexeme) = lexemes.next() {
             match lexeme {
                 Err(e) => return Err(e),
 
@@ -65,30 +65,45 @@ impl Collector {
                     self.heading_width = cmp::max(heading.len(), self.heading_width);
 
                     match section.take() {
-                        // We've just found a heading and we didn't already have one. Any text
-                        // that has already appeared should not be stored under this heading name,
-                        // so we'll push that under an unknown heading name. This case ought to be
-                        // pretty rare.
+                        // We've just found a heading and we didn't already ahve one. Any text
+                        // appearing before now should not be stored under this heading name, but
+                        // rather under an unknown heading name. This case is probably rare.
                         None => {
-                            section = Some(format_heading(&heading));
+                            section = Some(format_heading(heading));
                             if !stats.is_empty() {
                                 self.sections.push((None, stats));
                                 stats = Stats::default();
                             }
                         }
 
-                        // The usual header case; we push the current heading name and accumulated
-                        // stats.
-                        Some(previous_section) => {
-                            self.sections.push((Some(previous_section), stats));
-                            section = Some(heading);
+                        // The normal header case; we push the current heading name and
+                        // accumulated stats.
+                        Some(completed_section) => {
+                            self.sections.push((Some(completed_section), stats));
+                            section = Some(format_heading(heading));
                             stats = Stats::default();
                         }
                     }
                 }
 
-                Ok(Lexeme::Paragraph(paragraph)) => stats.apply(&paragraph),
+                // Text should be accumulated via the paragraph.
+                Ok(Lexeme::Text(text)) => {
+                    paragraph += text.split_words().count() as u32;
+                }
+
+                // Whitespace signals a complete paragraph.
+                Ok(Lexeme::Whitespace(_)) => {
+                    stats.push_paragraph(paragraph);
+                    paragraph = 0;
+                }
+
+                // Eat comments.
+                Ok(Lexeme::Comment(_)) => {}
             }
+        }
+
+        if paragraph != 0 {
+            stats.push_paragraph(paragraph);
         }
 
         if !stats.is_empty() {

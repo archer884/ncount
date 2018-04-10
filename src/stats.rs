@@ -2,7 +2,7 @@ use lex::{Lexeme, Lexer};
 use split_words::SplitWords;
 use std::cmp;
 use std::fmt;
-use std::io::{BufReader, Result};
+use std::io::{BufRead, Result};
 use std::path::Path;
 
 #[derive(Debug, Default)]
@@ -31,6 +31,16 @@ pub struct Collector {
     heading_width: usize,
 }
 
+impl fmt::Debug for Collector {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut d = f.debug_struct("Collector");
+        d.field("sections", &self.sections);
+        d.field("total_words", &self.total_words);
+        d.field("heading_width", &self.heading_width);
+        d.finish()
+    }
+}
+
 impl Collector {
     pub fn new() -> Self {
         // We set heading_width to 7 here because the minimum heading width (for an empty
@@ -45,14 +55,18 @@ impl Collector {
 
     pub fn push_path(&mut self, path: impl AsRef<Path>) -> Result<()> {
         use std::fs::File;
+        use std::io::BufReader;
 
+        let file = File::open(path).map(BufReader::new)?;
+        self.push_stream(file)
+    }
+
+    pub fn push_stream(&mut self, stream: impl BufRead) -> Result<()> {
         fn format_heading(heading: &str) -> String {
             heading.trim_left_matches(|c| c == '#').trim().into()
         }
 
-        let file = File::open(path).map(BufReader::new)?;
-
-        let mut lexemes = self.lexer.lexemes(file);
+        let mut lexemes = self.lexer.lexemes(stream);
         let mut section = None;
         let mut stats = Stats::default();
         let mut paragraph = 0;
@@ -147,5 +161,28 @@ impl fmt::Display for Collector {
         }
 
         writeln!(f, "\nTotal words: {}", self.total_words)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use stats::Collector;
+    use std::io::Cursor;
+
+    static TEXT: &str = include_str!("../resources/stats.txt");
+
+    #[test]
+    fn stats_are_correct() {
+        let stream = Cursor::new(TEXT);
+        let mut collector = Collector::new();
+
+        collector.push_stream(stream).unwrap();
+
+        // Check word count
+        assert_eq!(321, collector.total_words);
+
+        // Check paragraph count
+        let (_, stats) = collector.sections.into_iter().next().unwrap();
+        assert_eq!(9, stats.paragraphs);
     }
 }

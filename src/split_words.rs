@@ -51,7 +51,13 @@ impl<'source> Iterator for WordIterator<'source> {
 
 #[inline] // Is this really necessary?
 fn is_break_char(c: char) -> bool {
-    c.is_whitespace() || (c.is_ascii_punctuation() && c != '\'')
+    // FIXME: the colon (:) counts as ascii punctuation but is not a true break character when 
+    // it appears within a time, e.g. "3:45 PM." For now, to correct counting of times, here is
+    // a hack:
+
+    c.is_whitespace() || (
+        c.is_ascii_punctuation() && (c != ':' && c != '\'')
+    )
 }
 
 #[cfg(test)]
@@ -80,5 +86,12 @@ mod tests {
     fn abbreviations_are_counted_correctly() {
         let count = TEXT_WITH_ABBREVIATION.split_words().count();
         assert_eq!(7, count);
+    }
+
+    #[test]
+    fn coffee_case() {
+        let text = r#""I looked at the schedule, you know," she said on their way back from the university. "We can stop at this cafe, have a snack, and take the next bus at 3:45.""#;
+        let count = text.split_words().count();
+        assert_eq!(32, count);
     }
 }

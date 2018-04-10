@@ -44,7 +44,7 @@ impl Lexer {
         Lexemes::new(self, stream)
     }
 
-    pub fn words<'text, 'lexer: 'text>(&'lexer self, s: &'text str) -> Words<'text> {
+    pub fn words<'text, 'lexer: 'text>(&'lexer self, s: &'text str) -> impl Words<'text> {
         self.splitter.words(s)
     }
 

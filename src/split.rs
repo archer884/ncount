@@ -1,5 +1,9 @@
 use regex::Regex;
 
+pub trait Words<'text>: Iterator<Item = &'text str> { }
+
+impl<'text, T: Iterator<Item = &'text str>> Words<'text> for T { }
+
 pub struct Splitter {
     pattern: Regex,
 }
@@ -11,24 +15,10 @@ impl Splitter {
         Self { pattern }
     }
 
-    pub fn words<'text, 'splitter: 'text>(&'splitter self, s: &'text str) -> Words<'text> {
-        let words = self.pattern
+    pub fn words<'text, 'splitter: 'text>(&'splitter self, s: &'text str) -> impl Words<'text> {
+        self.pattern
             .captures_iter(s)
-            .map(|capture| capture.get(0).unwrap().as_str());
-
-        Words { source: Box::new(words) }
-    }
-}
-
-pub struct Words<'text> {
-    source: Box<Iterator<Item = &'text str> + 'text>,
-}
-
-impl<'text> Iterator for Words<'text> {
-    type Item = &'text str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.source.next()
+            .map(|capture| capture.get(0).unwrap().as_str())
     }
 }
 

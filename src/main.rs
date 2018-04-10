@@ -11,7 +11,7 @@ use stats::Collector;
 use std::env;
 use std::process;
 
-static VERSION: &str = "0.1.10";
+static VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let args: Vec<_> = env::args().skip(1).collect();

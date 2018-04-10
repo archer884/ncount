@@ -10,7 +10,11 @@ use path::PathProvider;
 use stats::Collector;
 use std::process;
 
+static VERSION: &str = "0.1.10";
+
 fn main() {
+    version();
+
     let mut collector = Collector::new();
 
     for path in PathProvider::new() {
@@ -21,4 +25,19 @@ fn main() {
     }
 
     println!("{}", collector);
+}
+
+/// If version requested, prints version number and exits.
+fn version() {
+    use std::env;
+
+    for arg in env::args() {
+        match arg.as_ref() {
+            "-v" | "--version" => {
+                println!("ncount {}", VERSION);
+                process::exit(0);
+            }
+            _ => { }
+        }
+    }
 }

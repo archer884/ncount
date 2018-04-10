@@ -1,18 +1,17 @@
 use glob::glob as deglob;
 use glob::Paths;
-use std::env::{self, Args};
-use std::iter::Skip;
+use std::slice::Iter;
 use std::path::PathBuf;
 
-pub struct PathProvider {
-    args: Skip<Args>,
+pub struct PathProvider<'p, T: 'p> {
+    paths: Iter<'p, T>,
     glob: Option<Paths>,
 }
 
-impl PathProvider {
-    pub fn new() -> Self {
+impl<'p, T: 'p> PathProvider<'p, T> {
+    pub fn new(paths: &'p [T]) -> Self {
         Self {
-            args: env::args().skip(1),
+            paths: paths.iter(),
             glob: None,
         }
     }
@@ -28,21 +27,24 @@ impl PathProvider {
     }
 }
 
-impl Iterator for PathProvider {
+impl<'p, T: AsRef<str> + 'p> Iterator for PathProvider<'p, T> {
     type Item = PathBuf;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_globbed_path() {
             // No globbed paths available.
-            None => match self.args.next() {
+            None => match self.paths.next() {
                 None => None,
-                Some(arg) => if arg.contains(glob_char) {
-                    self.glob = deglob(&arg).ok();
-                    self.next()
-                } else {
-                    Some(arg.into())
-                },
-            },
+                Some(path) => {
+                    let path = path.as_ref();
+                    if path.contains(glob_char) {
+                        self.glob = deglob(path).ok();
+                        self.next()
+                    } else {
+                        Some(path.into())
+                    }
+                }
+            }
 
             // Return globbed path.
             path => path,

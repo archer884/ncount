@@ -36,6 +36,8 @@ mod tests {
 
     static TEXT_WITH_ABBREVIATION: &str = "Don't look now, but this may break.";
 
+    static TEXT_WITH_TIME: &str = r#""I looked at the schedule, you know," she said on their way back from the university. "We can stop at this cafe, have a snack, and take the next bus at 3:45.""#;
+
     #[test]
     fn count_is_correct() {
         let splitter = Splitter::new();
@@ -52,9 +54,8 @@ mod tests {
 
     #[test]
     fn coffee_case() {
-        let text = r#""I looked at the schedule, you know," she said on their way back from the university. "We can stop at this cafe, have a snack, and take the next bus at 3:45.""#;
         let splitter = Splitter::new();
-        let count = splitter.words(text).count();
+        let count = splitter.words(TEXT_WITH_TIME).count();
         assert_eq!(32, count);
     }
 }

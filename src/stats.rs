@@ -92,10 +92,13 @@ impl Collector {
                 }
 
                 // Whitespace signals a complete paragraph.
-                Ok(Lexeme::Whitespace(_)) => {
+                Ok(Lexeme::Whitespace(_)) if paragraph != 0 => {
                     stats.push_paragraph(paragraph);
                     paragraph = 0;
                 }
+
+                // Eat whitespace where no words have been accumulated.
+                Ok(Lexeme::Whitespace(_)) => {}
 
                 // Eat comments.
                 Ok(Lexeme::Comment(_)) => {}

@@ -142,21 +142,21 @@ impl<'lexer, S: BufRead> Lexemes<'lexer, S> {
         }
 
         match self.fill_buffer() {
-            Some(Ok(0)) | None => None,
-            Some(Ok(_non_zero_length)) => self.next(),
-            Some(Err(e)) => Some(Err(e)),
+            Ok(0) => None,
+            Ok(_non_zero_length) => self.next(),
+            Err(e) => Some(Err(e)),
         }
     }
 
-    fn fill_buffer(&mut self) -> Option<Result<usize>> {
+    fn fill_buffer(&mut self) -> Result<usize> {
         self.buffer.clear();
         match self.stream.read_line(&mut self.buffer) {
-            Ok(0) => None,
-            Ok(read) => {
+            Ok(0) => Ok(0),
+            Ok(len) => {
                 self.lexer.map_buffer(&mut self.slices, &self.buffer);
-                Some(Ok(read))
+                Ok(len)
             }
-            Err(e) => Some(Err(e)),
+            error => error,
         }
     }
 }

@@ -1,4 +1,5 @@
 use regex::Regex;
+use split::{Splitter, Words};
 use std::collections::VecDeque;
 use std::io::{BufRead, Result};
 
@@ -25,17 +26,26 @@ struct Bound {
 
 pub struct Lexer {
     comments: Regex,
+    splitter: Splitter,
 }
 
 impl Lexer {
     pub fn new() -> Self {
         let comments = Regex::new(r#"<[^<]*>"#).expect("Failed to initialize comment pattern");
+        let splitter = Splitter::new();
 
-        Self { comments }
+        Self {
+            comments,
+            splitter,
+        }
     }
 
     pub fn lexemes<S: BufRead>(&self, stream: S) -> Lexemes<S> {
         Lexemes::new(self, stream)
+    }
+
+    pub fn words<'text, 'lexer: 'text>(&'lexer self, s: &'text str) -> Words<'text> {
+        self.splitter.words(s)
     }
 
     fn map_buffer(&self, slices: &mut VecDeque<Bound>, s: &str) {

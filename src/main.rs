@@ -3,7 +3,7 @@ extern crate regex;
 
 mod lex;
 mod path;
-mod split_words;
+mod split;
 mod stats;
 
 use path::PathProvider;

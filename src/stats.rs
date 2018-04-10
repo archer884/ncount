@@ -1,5 +1,4 @@
 use lex::{Lexeme, Lexer};
-use split_words::SplitWords;
 use std::cmp;
 use std::fmt;
 use std::io::{BufRead, Result};
@@ -102,7 +101,7 @@ impl Collector {
 
                 // Text should be accumulated via the paragraph.
                 Ok(Lexeme::Text(text)) => {
-                    paragraph += text.split_words().count() as u32;
+                    paragraph += self.lexer.words(text).count() as u32;
                 }
 
                 // Whitespace signals a complete paragraph.

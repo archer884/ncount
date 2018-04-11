@@ -10,7 +10,7 @@ pub struct Splitter {
 
 impl Splitter {
     pub fn new() -> Self {
-        let pattern = Regex::new(r#"[\w':]+"#).unwrap();
+        let pattern = Regex::new(r#"\w+((\-?\w+)|(:?\w+)|('?\w+))?"#).unwrap();
 
         Self { pattern }
     }
@@ -40,6 +40,9 @@ mod tests {
     back from the university. \"We can stop at this cafe, have a snack, and take the next bus at \
     3:45.\"";
 
+    static TEXT_WITH_HYPHENS: &str = "Hyphenated words are a-counted as one, but clauses \
+    separated by em--dashes like this--are counted normally.";
+
     #[test]
     fn count_is_correct() {
         let splitter = Splitter::new();
@@ -59,5 +62,12 @@ mod tests {
         let splitter = Splitter::new();
         let count = splitter.words(TEXT_WITH_TIME).count();
         assert_eq!(32, count);
+    }
+
+    #[test]
+    fn dashes_and_m_dashes() {
+        let splitter = Splitter::new();
+        let count = splitter.words(TEXT_WITH_HYPHENS).count();
+        assert_eq!(17, count);
     }
 }

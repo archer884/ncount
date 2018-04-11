@@ -34,10 +34,7 @@ impl Lexer {
         let comments = Regex::new(r#"<[^<]*>"#).expect("Failed to initialize comment pattern");
         let splitter = Splitter::new();
 
-        Self {
-            comments,
-            splitter,
-        }
+        Self { comments, splitter }
     }
 
     pub fn lexemes<S: BufRead>(&self, stream: S) -> Lexemes<S> {

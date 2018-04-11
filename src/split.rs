@@ -1,8 +1,8 @@
 use regex::Regex;
 
-pub trait Words<'text>: Iterator<Item = &'text str> { }
+pub trait Words<'text>: Iterator<Item = &'text str> {}
 
-impl<'text, T: Iterator<Item = &'text str>> Words<'text> for T { }
+impl<'text, T: Iterator<Item = &'text str>> Words<'text> for T {}
 
 pub struct Splitter {
     pattern: Regex,
@@ -11,7 +11,7 @@ pub struct Splitter {
 impl Splitter {
     pub fn new() -> Self {
         let pattern = Regex::new(r#"[\w':]+"#).unwrap();
-        
+
         Self { pattern }
     }
 
@@ -36,7 +36,9 @@ mod tests {
 
     static TEXT_WITH_ABBREVIATION: &str = "Don't look now, but this may break.";
 
-    static TEXT_WITH_TIME: &str = r#""I looked at the schedule, you know," she said on their way back from the university. "We can stop at this cafe, have a snack, and take the next bus at 3:45.""#;
+    static TEXT_WITH_TIME: &str = "\"I looked at the schedule, you know,\" she said on their way \
+    back from the university. \"We can stop at this cafe, have a snack, and take the next bus at \
+    3:45.\"";
 
     #[test]
     fn count_is_correct() {

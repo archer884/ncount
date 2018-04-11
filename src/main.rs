@@ -39,7 +39,7 @@ fn version<T: AsRef<str>>(args: &[T]) {
                 println!("ncount {}", VERSION);
                 process::exit(0);
             }
-            _ => { }
+            _ => {}
         }
     }
 }

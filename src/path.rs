@@ -44,7 +44,7 @@ impl<'p, T: AsRef<str> + 'p> Iterator for PathProvider<'p, T> {
                         Some(path.into())
                     }
                 }
-            }
+            },
 
             // Return globbed path.
             path => path,

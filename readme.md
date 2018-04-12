@@ -1,10 +1,8 @@
 # ncount
 
-> Word count for "novel" format text files.
+> Derive narrative stats for markdown files.
 
-Ok, so, I got sick of the way Visual Studio Code treats markdown files. I don't know why it does what it does, but what it does is obnoxious and *literally* made it difficult for me to do my damn job as a writer. As a result, we're moving away from that. Far, far away.
-
-...Now, an .nv file is just a markdown file with a different filename extension, so don't get too excited.
+There is certain information we care in fiction. The number of words, the length of paragraphs, etc. Everything else is just noise. Specifically designed to work on Markdown files, excepting headings and comments from the word count. Also ignores block quotes at the moment. Kind of torn on that.
 
 ## Usage
 

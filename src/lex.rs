@@ -57,7 +57,7 @@ impl Lexer {
         }
 
         // Whitespace
-        if s.is_whitespace() {
+        if s.chars().all(char::is_whitespace) {
             slices.push_back(Bound {
                 kind: BoundKind::Whitespace,
                 left: 0,

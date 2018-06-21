@@ -41,7 +41,7 @@ mod tests {
     3:45.\"";
 
     static TEXT_WITH_HYPHENS: &str = "Hyphenated words are a-counted as one, but clauses \
-    separated by em--dashes like this--are counted normally.";
+                                      separated by em--dashes like this--are counted normally.";
 
     #[test]
     fn count_is_correct() {

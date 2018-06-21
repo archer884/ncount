@@ -78,7 +78,7 @@ impl Collector {
                     self.heading_width = cmp::max(heading.len(), self.heading_width);
 
                     match section.take() {
-                        // We've just found a heading and we didn't already ahve one. Any text
+                        // We've just found a heading and we didn't already have one. Any text
                         // appearing before now should not be stored under this heading name, but
                         // rather under an unknown heading name. This case is probably rare.
                         None => {

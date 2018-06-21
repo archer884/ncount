@@ -1,7 +1,7 @@
 use glob::glob as deglob;
 use glob::Paths;
-use std::slice::Iter;
 use std::path::PathBuf;
+use std::slice::Iter;
 
 pub struct PathProvider<'p, T: 'p> {
     paths: Iter<'p, T>,

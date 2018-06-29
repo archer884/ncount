@@ -39,6 +39,22 @@ fn version<T: AsRef<str>>(args: &[T]) {
                 println!("ncount {}", VERSION);
                 process::exit(0);
             }
+
+            "-h" | "--help" => {
+                println!(
+                    "
+Output format: h w p a l
+
+h. Heading
+w. Word count
+p. Paragraph count
+a. Average paragraph length
+l. Longest paragraph length
+"
+                );
+                process::exit(0);
+            }
+
             _ => {}
         }
     }

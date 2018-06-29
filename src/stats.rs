@@ -182,10 +182,7 @@ mod tests {
         assert_eq!(321, collector.total_words);
 
         // Check paragraph count
-        let paragraph_count: u32 = collector.sections
-            .into_iter()
-            .map(|x| x.1.paragraphs)
-            .sum();
+        let paragraph_count: u32 = collector.sections.into_iter().map(|x| x.1.paragraphs).sum();
         assert_eq!(9, paragraph_count);
     }
 }

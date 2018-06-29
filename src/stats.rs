@@ -92,6 +92,7 @@ impl Collector {
                         // The normal header case; we push the current heading name and
                         // accumulated stats.
                         Some(completed_section) => {
+                            self.total_words += stats.words;
                             self.sections.push((Some(completed_section), stats));
                             section = Some(format_heading(heading));
                             stats = Stats::default();
@@ -181,7 +182,10 @@ mod tests {
         assert_eq!(321, collector.total_words);
 
         // Check paragraph count
-        let (_, stats) = collector.sections.into_iter().next().unwrap();
-        assert_eq!(9, stats.paragraphs);
+        let paragraph_count: u32 = collector.sections
+            .into_iter()
+            .map(|x| x.1.paragraphs)
+            .sum();
+        assert_eq!(9, paragraph_count);
     }
 }

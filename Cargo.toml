@@ -1,6 +1,6 @@
 [package]
 name = "ncount"
-version = "0.1.13"
+version = "0.1.14"
 authors = ["J/A <archer884@gmail.com>"]
 license = "Unlicense"
 keywords = ["novel", "word-count", "text"]

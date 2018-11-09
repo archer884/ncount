@@ -1,61 +1,11 @@
-extern crate glob;
-extern crate regex;
+mod app;
+mod collector;
+mod error;
+mod opt;
+mod parse;
 
-mod lex;
-mod path;
-mod split;
-mod stats;
+use crate::{app::Application, opt::Opt};
 
-use path::PathProvider;
-use stats::Collector;
-use std::env;
-use std::process;
-
-static VERSION: &str = env!("CARGO_PKG_VERSION");
-
-fn main() {
-    let args: Vec<_> = env::args().skip(1).collect();
-    version(&args);
-    run(&args);
-}
-
-/// Run program.
-fn run<T: AsRef<str>>(args: &[T]) {
-    let mut collector = Collector::new();
-    for path in PathProvider::new(args) {
-        if let Err(e) = collector.push_path(&path) {
-            eprintln!("Failed to load path:\n  {}\n  {}", path.display(), e);
-            process::exit(1);
-        }
-    }
-    println!("{}", collector);
-}
-
-/// If version requested, print version number and exit.
-fn version<T: AsRef<str>>(args: &[T]) {
-    for arg in args {
-        match arg.as_ref() {
-            "-v" | "--version" => {
-                println!("ncount {}", VERSION);
-                process::exit(0);
-            }
-
-            "-h" | "--help" => {
-                println!(
-                    "
-Output format: h w p a l
-
-h. Heading
-w. Word count
-p. Paragraph count
-a. Average paragraph length
-l. Longest paragraph length
-"
-                );
-                process::exit(0);
-            }
-
-            _ => {}
-        }
-    }
+fn main() -> error::Result<()> {
+    Application.run(&Opt::from_args())
 }

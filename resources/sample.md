@@ -12,6 +12,20 @@ Not happy, perhaps. But it was better to pretend to be happy. Today, however, Ma
 
 ## Other title
 
+<!-- This comment should not be counted -->
+
+<!--
+
+    This comment should not be counted.
+
+-->
+
+<!--
+
+This comment should not be counted.
+
+-->
+
 Grier, following close behind Margaret, stopped when Margaret stopped but did not respond.
 
 "I'm a little hungry," said Margaret. "Do you mind if we...?"

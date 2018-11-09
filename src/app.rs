@@ -12,7 +12,7 @@ impl Application {
         let mut collector = Collector::new();
 
         for path in read_paths(opt.path())? {
-            apply_stats(&path, &mut collector)?;
+            apply_path(&path, &mut collector)?;
         }
 
         println!("{}", collector.as_table());
@@ -21,12 +21,17 @@ impl Application {
     }
 }
 
-fn apply_stats(path: &Path, collector: &mut Collector) -> Result<()> {
-    use crate::parse::{MarkdownParser, Rule};
-    use pest::Parser;
+fn apply_path(path: &Path, collector: &mut Collector) -> Result<()> {
     use std::fs;
 
     let text = fs::read_to_string(path)?;
+    apply_str(&text, collector)
+}
+
+fn apply_str(text: &str, collector: &mut Collector) -> Result<()> {
+    use crate::parse::{MarkdownParser, Rule};
+    use pest::Parser;
+    
     let document = MarkdownParser::parse(Rule::Document, &text)?;
 
     let mut heading = None;
@@ -78,3 +83,28 @@ fn read_paths(path: &Path) -> Result<Vec<PathBuf>> {
     paths.sort();
     Ok(paths)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::apply_str;
+    use crate::collector::{Collector, Stats};
+
+    static TEXT: &str = include_str!("../resources/sample.md");
+
+    #[test]
+    fn stats_are_correct() {
+        let mut collector = Collector::new();
+
+        apply_str(TEXT, &mut collector).unwrap();
+
+        let Stats {
+            word_count,
+            paragraph_count,
+            ..
+        } = collector.overall_stats();
+
+        assert_eq!(321, word_count, "{:?}", collector.overall_stats());
+        assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
+    }
+}
+

@@ -111,7 +111,7 @@ impl Collector {
         self.stats.push((Some(heading.into()), stats));
     }
 
-    fn overall_stats(&self) -> Stats {
+    pub fn overall_stats(&self) -> Stats {
         let (word_count, paragraph_count, longest_paragraph) = self.stats.iter().fold(
             (0, 0, 0),
             |(word_count, paragraph_count, longest_paragraph), stats| {

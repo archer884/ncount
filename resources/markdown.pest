@@ -1,6 +1,6 @@
 // Pest supports these rules implicitly when defined
 COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
-WHITESPACE = _{ " " | "," | "." | "!" | "?" | "*" | "—" | ":" | ";" | "'" | "\"" }
+WHITESPACE = _{ " " | "," | "." | "!" | "?" | "*" | "-" | "—" | ":" | ";" | "'" | "\"" }
 
 // FIXME: consider sentence support again?
 Document = { SOI ~  (Title | Paragraph | NEWLINE)+ ~ EOI }

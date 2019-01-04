@@ -1,13 +1,28 @@
-// Pest supports these rules implicitly when defined
-COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
-WHITESPACE = _{ " " | "," | "." | "!" | "?" | "*" | "-" | "—" | ":" | ";" | "'" | "\"" }
+Document = {
+	SOI ~ (Title | Paragraph | NEWLINE)+ ~ EOI
+}
 
-// FIXME: consider sentence support again?
-Document = { SOI ~  (Title | Paragraph | NEWLINE)+ ~ EOI }
-Title = @{ "#"+ ~ (!NEWLINE ~ ANY)* ~ &NEWLINE? }
-Paragraph = { Word+ ~ &NEWLINE? }
+Title = @{
+	"#"+ ~ (!NEWLINE ~ ANY)* ~ &NEWLINE?
+}
+
+Paragraph = {
+	(Word | Time)+ ~ &NEWLINE?
+}
+
 Word = @{
-	(LETTER+ ~ ("-" ~ LETTER+)+)
-    | (LETTER+ ~ ("'" ~ LETTER+)?)
-    | (NUMBER+ ~ ":" ~ NUMBER+)
+    (LETTER+ ~ ("'" ~ LETTER+)?) | (LETTER+ ~ ("-" ~ LETTER+)+)
+}
+
+Time = @{
+    NUMBER+ ~ ":" ~ NUMBER+
+}
+
+// Pest supports these rules implicitly when defined
+COMMENT = _{
+    "<!--" ~ (!"-->" ~ ANY)* ~ "-->"
+}
+
+WHITESPACE = _{
+    " " | "," | "." | "!" | "?" | "*" | "-" | "—" | ":" | ";" | "'" | "\""
 }

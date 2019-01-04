@@ -31,7 +31,7 @@ fn apply_path(path: &Path, collector: &mut Collector) -> Result<()> {
 fn apply_str(text: &str, collector: &mut Collector) -> Result<()> {
     use crate::parse::{MarkdownParser, Rule};
     use pest::Parser;
-    
+
     let document = MarkdownParser::parse(Rule::Document, &text)?;
 
     let mut heading = None;
@@ -63,7 +63,7 @@ fn apply_str(text: &str, collector: &mut Collector) -> Result<()> {
 }
 
 fn heading_name(s: &str) -> String {
-    s.trim_left_matches(|x: char| x == '#' || x.is_whitespace())
+    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
         .to_owned()
 }
 
@@ -107,4 +107,3 @@ mod tests {
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
     }
 }
-

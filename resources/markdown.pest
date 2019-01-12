@@ -7,7 +7,7 @@ Title = @{
 }
 
 Paragraph = {
-	(Word | Time)+ ~ &NEWLINE?
+	(Word | Time | NUMBER)+ ~ &NEWLINE?
 }
 
 Word = @{

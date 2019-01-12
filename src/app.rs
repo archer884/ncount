@@ -106,4 +106,16 @@ mod tests {
         assert_eq!(321, word_count, "{:?}", collector.overall_stats());
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
     }
+
+    #[test]
+    fn can_parse_numbers() {
+        let mut collector = Collector::new();
+        apply_str("He drove a V-6", &mut collector).unwrap();
+    }
+
+    #[test]
+    fn can_parse_times() {
+        let mut collector = Collector::new();
+        apply_str("It was 10:30", &mut collector).unwrap();
+    }
 }

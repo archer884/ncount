@@ -7,11 +7,15 @@ Title = @{
 }
 
 Paragraph = {
-	(Word | Time | NUMBER)+ ~ &NEWLINE?
+	(Word | Time | Other)+ ~ &NEWLINE?
 }
 
 Word = @{
     (LETTER+ ~ ("'" ~ LETTER+)?) | (LETTER+ ~ ("-" ~ LETTER+)+)
+}
+
+Other = @{
+    (LETTER | PUNCTUATION | NUMBER | SYMBOL)+
 }
 
 Time = @{

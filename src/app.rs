@@ -24,11 +24,13 @@ impl Application {
 fn apply_path(path: &Path, collector: &mut Collector) -> Result<()> {
     use std::fs;
 
+    let filename = path.file_name().and_then(|name| name.to_str());
     let text = fs::read_to_string(path)?;
-    apply_str(&text, collector)
+
+    apply_str(filename, &text, collector)
 }
 
-fn apply_str(text: &str, collector: &mut Collector) -> Result<()> {
+fn apply_str(filename: Option<&str>, text: &str, collector: &mut Collector) -> Result<()> {
     use crate::parse::{MarkdownParser, Rule};
     use pest::Parser;
 
@@ -55,7 +57,12 @@ fn apply_str(text: &str, collector: &mut Collector) -> Result<()> {
     }
 
     match heading {
-        None => collector.push(stats),
+        None => if let Some(filename) = filename {
+            collector.push_with_heading(filename, stats)
+        } else {
+            collector.push(stats)
+        }
+
         Some(heading) => collector.push_with_heading(heading, stats),
     }
 
@@ -95,7 +102,7 @@ mod tests {
     fn stats_are_correct() {
         let mut collector = Collector::new();
 
-        apply_str(TEXT, &mut collector).unwrap();
+        apply_str(None, TEXT, &mut collector).unwrap();
 
         let Stats {
             word_count,
@@ -110,12 +117,12 @@ mod tests {
     #[test]
     fn can_parse_numbers() {
         let mut collector = Collector::new();
-        apply_str("He drove a V-6", &mut collector).unwrap();
+        apply_str(None, "He drove a V-6", &mut collector).unwrap();
     }
 
     #[test]
     fn can_parse_times() {
         let mut collector = Collector::new();
-        apply_str("It was 10:30", &mut collector).unwrap();
+        apply_str(None, "It was 10:30", &mut collector).unwrap();
     }
 }

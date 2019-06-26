@@ -57,10 +57,12 @@ fn apply_str(filename: Option<&str>, text: &str, collector: &mut Collector) -> R
     }
 
     match heading {
-        None => if let Some(filename) = filename {
-            collector.push_with_heading(filename, stats)
-        } else {
-            collector.push(stats)
+        None => {
+            if let Some(filename) = filename {
+                collector.push_with_heading(filename, stats)
+            } else {
+                collector.push(stats)
+            }
         }
 
         Some(heading) => collector.push_with_heading(heading, stats),

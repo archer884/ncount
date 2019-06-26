@@ -4,8 +4,6 @@ mod error;
 mod opt;
 mod parse;
 
-use crate::{app::Application, opt::Opt};
-
 fn main() -> error::Result<()> {
-    Application.run(&Opt::from_args())
+    app::Application.run(&opt::Opt::from_args())
 }

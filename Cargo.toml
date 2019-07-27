@@ -14,8 +14,8 @@ A word count tool intended to derive useful stats from markdown.
 """
 
 [dependencies]
-pest = "2.0"
-pest_derive = "2.0"
+pest = "2.1"
+pest_derive = "2.1"
 prettytable-rs = "0.8"
 structopt = "0.2"
 walkdir = "2.2"

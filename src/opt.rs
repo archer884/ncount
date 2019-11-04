@@ -1,5 +1,4 @@
 use std::iter;
-use std::path::Path;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -12,9 +11,9 @@ impl Opt {
         StructOpt::from_args()
     }
 
-    pub fn paths<'a>(&'a self) -> Box<dyn Iterator<Item = &Path> + 'a> {
+    pub fn paths<'a>(&'a self) -> Box<dyn Iterator<Item = &str> + 'a> {
         if self.paths.is_empty() {
-            Box::new(iter::once(Path::new(".")))
+            Box::new(iter::once("."))
         } else {
             Box::new(self.paths.iter().map(AsRef::as_ref))
         }

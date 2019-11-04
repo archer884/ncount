@@ -2,7 +2,9 @@
 
 > Derive narrative stats for markdown files.
 
-There is certain information we care in fiction. The number of words, the length of paragraphs, etc. Everything else is just noise. Specifically designed to work on Markdown files, excepting headings and comments from the word count. Also ignores block quotes at the moment. Kind of torn on that.
+There is certain information we care in fiction. The number of words, the length of paragraphs, etc. Everything else is just noise. Specifically designed to work on Markdown files, excepting headings and comments from the word count.
+
+Updated to support glob patterns (even on Windows!) and multiple directories.
 
 ## Usage
 

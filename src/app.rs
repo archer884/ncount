@@ -76,27 +76,53 @@ fn heading_name(s: &str) -> String {
         .to_owned()
 }
 
-fn read_paths<'a>(p: impl Iterator<Item = &'a Path>) -> Result<Vec<PathBuf>> {
-    use walkdir::WalkDir;
+fn read_paths<'a>(candidates: impl Iterator<Item = &'a str>) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    for path in p {
-        let meta = path.metadata()?;
-        if meta.file_type().is_file() {
-            paths.push(path.into());
-        } else {
-            let walker = WalkDir::new(path)
-                .contents_first(true)
-                .into_iter()
-                .filter_entry(|entry| {
-                    entry
-                        .metadata()
-                        .map(|meta| meta.file_type().is_file())
-                        .unwrap_or_default()
-                })
-                .filter_map(|entry| entry.ok().map(|entry| entry.path().into()));
-            paths.extend(walker);
+
+    for s in candidates {
+        let path: &Path = s.as_ref();
+        match path.metadata() {
+            Ok(meta) => {
+                if meta.file_type().is_file() {
+                    paths.push(path.into());
+                } else {
+                    let walker = walkdir::WalkDir::new(path)
+                        .contents_first(true)
+                        .into_iter()
+                        .filter_entry(|entry| {
+                            entry
+                                .metadata()
+                                .map(|meta| meta.file_type().is_file())
+                                .unwrap_or_default()
+                        })
+                        .filter_map(|entry| entry.ok().map(|entry| entry.path().into()));
+                    paths.extend(walker);
+                }
+            }
+
+            // Possible glob pattern. If globbing fails, just return the existing error instead
+            // of the glob pattern error.
+            Err(e) => {
+                let globbed_paths = match glob::glob(s) {
+                    Ok(g) => g,
+                    Err(_) => return Err(e.into()),
+                };
+
+                let globbed_paths =
+                    globbed_paths
+                        .filter_map(|item| item.ok())
+                        .filter(|candidate| {
+                            candidate
+                                .metadata()
+                                .map(|meta| meta.file_type().is_file())
+                                .unwrap_or_default()
+                        });
+                paths.extend(globbed_paths);
+            }
         }
     }
+
+    paths.sort();
     Ok(paths)
 }
 

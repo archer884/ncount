@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::iter;
+use std::path::Path;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
-    #[structopt(parse(from_os_str))]
-    path: Option<PathBuf>,
+    paths: Vec<String>,
 }
 
 impl Opt {
@@ -12,10 +12,11 @@ impl Opt {
         StructOpt::from_args()
     }
 
-    pub fn path(&self) -> &Path {
-        match self.path {
-            None => Path::new("."),
-            Some(ref path) => path,
+    pub fn paths<'a>(&'a self) -> Box<dyn Iterator<Item = &Path> + 'a> {
+        if self.paths.is_empty() {
+            Box::new(iter::once(Path::new(".")))
+        } else {
+            Box::new(self.paths.iter().map(AsRef::as_ref))
         }
     }
 }

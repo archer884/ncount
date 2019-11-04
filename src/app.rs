@@ -11,7 +11,7 @@ impl Application {
     pub fn run(&self, opt: &Opt) -> Result<()> {
         let mut collector = Collector::new();
 
-        for path in read_paths(opt.path())? {
+        for path in read_paths(opt.paths())? {
             apply_path(&path, &mut collector)?;
         }
 
@@ -76,20 +76,27 @@ fn heading_name(s: &str) -> String {
         .to_owned()
 }
 
-fn read_paths(path: &Path) -> Result<Vec<PathBuf>> {
+fn read_paths<'a>(p: impl Iterator<Item = &'a Path>) -> Result<Vec<PathBuf>> {
     use walkdir::WalkDir;
-
     let mut paths = Vec::new();
-
-    for entry in WalkDir::new(path).into_iter() {
-        let entry = entry?;
-
-        if entry.file_type().is_file() {
-            paths.push(entry.into_path());
+    for path in p {
+        let meta = path.metadata()?;
+        if meta.file_type().is_file() {
+            paths.push(path.into());
+        } else {
+            let walker = WalkDir::new(path)
+                .contents_first(true)
+                .into_iter()
+                .filter_entry(|entry| {
+                    entry
+                        .metadata()
+                        .map(|meta| meta.file_type().is_file())
+                        .unwrap_or_default()
+                })
+                .filter_map(|entry| entry.ok().map(|entry| entry.path().into()));
+            paths.extend(walker);
         }
     }
-
-    paths.sort();
     Ok(paths)
 }
 

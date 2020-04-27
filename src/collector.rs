@@ -50,7 +50,7 @@ impl Collector {
         let mut stats = Stats::default();
 
         for line in text.lines() {
-            if line.is_empty() {
+            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphabetic()) {
                 continue;
             }
 

@@ -1,4 +1,7 @@
-use prettytable::Table;
+use prettytable::{
+    format::{Alignment, TableFormat},
+    Cell, Table,
+};
 use std::cmp;
 
 #[derive(Debug)]
@@ -34,72 +37,11 @@ impl Collector {
     }
 
     pub fn as_table(&self) -> Table {
-        use prettytable::{
-            format::{Alignment, TableFormat},
-            Cell,
-        };
-
         let mut table = Table::new();
-        let mut format = TableFormat::new();
-        format.borders(' ');
-        format.padding(0, 3);
-        table.set_format(format);
-
-        {
-            let row = table.add_empty_row();
-            row.add_cell(Cell::new_align("§", Alignment::LEFT));
-            row.add_cell(Cell::new_align("Count ¶", Alignment::RIGHT));
-            row.add_cell(Cell::new_align("Avg ¶", Alignment::RIGHT));
-            row.add_cell(Cell::new_align("Long ¶", Alignment::RIGHT));
-            row.add_cell(Cell::new_align("Words", Alignment::RIGHT));
-        }
-
-        for (heading, stats) in self.stats.iter() {
-            let row = table.add_empty_row();
-            row.add_cell(Cell::new_align(
-                heading,
-                Alignment::LEFT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.paragraph_count.to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.average_paragraph().to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.longest_paragraph.to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.word_count.to_string(),
-                Alignment::RIGHT,
-            ));
-        }
-
-        {
-            let row = table.add_empty_row();
-            let stats = self.overall_stats();
-            row.add_cell(Cell::new_align("", Alignment::LEFT));
-            row.add_cell(Cell::new_align(
-                &stats.paragraph_count.to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.average_paragraph().to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.longest_paragraph.to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(Cell::new_align(
-                &stats.word_count.to_string(),
-                Alignment::RIGHT,
-            ));
-        }
-
+        add_format(&mut table);
+        add_header(&mut table);
+        add_rows(&mut table, &self.stats);
+        add_footer(&mut table, self.overall_stats());
         table
     }
 
@@ -194,6 +136,66 @@ fn filter_comments(text: &str) -> String {
     }
 
     result
+}
+
+fn add_format(table: &mut Table) {
+    let mut format = TableFormat::new();
+    format.borders(' ');
+    format.padding(0, 3);
+    table.set_format(format);
+}
+
+fn add_header(table: &mut Table) {
+    let row = table.add_empty_row();
+    row.add_cell(Cell::new_align("§", Alignment::LEFT));
+    row.add_cell(Cell::new_align("Count ¶", Alignment::RIGHT));
+    row.add_cell(Cell::new_align("Avg ¶", Alignment::RIGHT));
+    row.add_cell(Cell::new_align("Long ¶", Alignment::RIGHT));
+    row.add_cell(Cell::new_align("Words", Alignment::RIGHT));
+}
+
+fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a (String, Stats)> + 'a) {
+    for (heading, stats) in data {
+        let row = table.add_empty_row();
+        row.add_cell(Cell::new_align(heading, Alignment::LEFT));
+        row.add_cell(Cell::new_align(
+            &stats.paragraph_count.to_string(),
+            Alignment::RIGHT,
+        ));
+        row.add_cell(Cell::new_align(
+            &stats.average_paragraph().to_string(),
+            Alignment::RIGHT,
+        ));
+        row.add_cell(Cell::new_align(
+            &stats.longest_paragraph.to_string(),
+            Alignment::RIGHT,
+        ));
+        row.add_cell(Cell::new_align(
+            &stats.word_count.to_string(),
+            Alignment::RIGHT,
+        ));
+    }
+}
+
+fn add_footer(table: &mut Table, stats: Stats) {
+    let row = table.add_empty_row();
+    row.add_cell(Cell::new_align("", Alignment::LEFT));
+    row.add_cell(Cell::new_align(
+        &stats.paragraph_count.to_string(),
+        Alignment::RIGHT,
+    ));
+    row.add_cell(Cell::new_align(
+        &stats.average_paragraph().to_string(),
+        Alignment::RIGHT,
+    ));
+    row.add_cell(Cell::new_align(
+        &stats.longest_paragraph.to_string(),
+        Alignment::RIGHT,
+    ));
+    row.add_cell(Cell::new_align(
+        &stats.word_count.to_string(),
+        Alignment::RIGHT,
+    ));
 }
 
 #[cfg(test)]

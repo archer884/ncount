@@ -10,7 +10,7 @@ impl Opt {
         StructOpt::from_args()
     }
 
-    pub fn paths<'a>(&'a self) -> impl Iterator<Item = &str> + 'a {
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
         self.paths
             .iter()
             .map(AsRef::as_ref)

@@ -1,134 +1,85 @@
 use crate::{
-    collector::{Collector, Stats},
-    error::Result,
+    collector::Collector,
     opt::Opt,
 };
 use std::path::{Path, PathBuf};
+use std::{fs, iter};
 
-pub struct Application;
+pub struct Application {
+    options: Opt,
+    collector: Collector,
+}
 
 impl Application {
-    pub fn run(&self, opt: &Opt) -> Result<()> {
-        let mut collector = Collector::new();
+    pub fn with_opts(options: Opt) -> Self {
+        Application {
+            options,
+            collector: Collector::new(),
+        }
+    }
 
-        for path in read_paths(opt.paths())? {
-            apply_path(&path, &mut collector)?;
+    pub fn run(&mut self) -> crate::Result<()> {
+        let paths: Vec<_> = self.options.paths().flat_map(extract_paths).collect();
+         
+        for path in paths {
+            self.apply_path(&path)?;
         }
 
-        println!("{}", collector.as_table());
-
+        println!("{}", self.collector.as_table());
         Ok(())
     }
+
+    fn apply_path(&mut self, path: &Path) -> crate::Result<()> {
+        let filename = path.file_name().and_then(|name| name.to_str());
+        let text = fs::read_to_string(path)?;
+        self.collector.apply_str(filename, &text)
+    }
 }
 
-fn apply_path(path: &Path, collector: &mut Collector) -> Result<()> {
-    use std::fs;
-
-    let filename = path.file_name().and_then(|name| name.to_str());
-    let text = fs::read_to_string(path)?;
-
-    apply_str(filename, &text, collector)
+fn extract_paths(path: &str) -> Box<dyn Iterator<Item = PathBuf>> {
+    match fs::metadata(path) {
+        Ok(metadata) => literal_path(path, metadata),
+        Err(_) => glob_pattern(path),
+    }
 }
 
-fn apply_str(filename: Option<&str>, text: &str, collector: &mut Collector) -> Result<()> {
-    use crate::parse::{MarkdownParser, Rule};
-    use pest::Parser;
-
-    let document = MarkdownParser::parse(Rule::Document, &text)?;
-
-    let mut heading = None;
-    let mut stats = Stats::default();
-
-    for element in document.flatten() {
-        match element.as_rule() {
-            Rule::Title => match heading.take() {
-                None => heading = Some(heading_name(element.as_str())),
-                Some(previous_heading) => {
-                    collector.push_with_heading(previous_heading, stats);
-                    stats = Stats::default();
-                }
-            },
-            Rule::Paragraph => stats.push(element.into_inner().count() as u32),
-
-            // We are uninterested in other parse events because we'll get
-            // the word count via the inner elements of each paragraph.
-            _ => (),
-        }
+fn literal_path(path: &str, metadata: fs::Metadata) -> Box<dyn Iterator<Item = PathBuf>> {
+    if metadata.is_file() {
+        return Box::new(iter::once(path.into()))
     }
 
-    match heading {
-        None => {
-            if let Some(filename) = filename {
-                collector.push_with_heading(filename, stats)
-            } else {
-                collector.push(stats)
-            }
-        }
+    let paths = walkdir::WalkDir::new(path)
+        .contents_first(true)
+        .into_iter()
+        .filter_entry(|entry| {
+            entry
+                .metadata()
+                .map(|meta| meta.file_type().is_file())
+                .unwrap_or_default()
+        })
+        .filter_map(|entry| entry.ok().map(|entry| entry.path().into()));
 
-        Some(heading) => collector.push_with_heading(heading, stats),
-    }
-
-    Ok(())
+    Box::new(paths)
 }
 
-fn heading_name(s: &str) -> String {
-    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
-        .to_owned()
-}
+fn glob_pattern(path: &str) -> Box<dyn Iterator<Item = PathBuf>> {
+    let paths = match glob::glob(path) {
+        Ok(paths) => paths,
+        Err(_) => return Box::new(iter::empty())
+    };
 
-fn read_paths<'a>(candidates: impl Iterator<Item = &'a str>) -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
+    let paths = paths.filter_map(|item| item.ok()).filter(|candidate| {
+        candidate
+            .metadata()
+            .map(|meta| meta.file_type().is_file())
+            .unwrap_or_default()
+    });
 
-    for s in candidates {
-        let path: &Path = s.as_ref();
-        match path.metadata() {
-            Ok(meta) => {
-                if meta.file_type().is_file() {
-                    paths.push(path.into());
-                } else {
-                    let walker = walkdir::WalkDir::new(path)
-                        .contents_first(true)
-                        .into_iter()
-                        .filter_entry(|entry| {
-                            entry
-                                .metadata()
-                                .map(|meta| meta.file_type().is_file())
-                                .unwrap_or_default()
-                        })
-                        .filter_map(|entry| entry.ok().map(|entry| entry.path().into()));
-                    paths.extend(walker);
-                }
-            }
-
-            // Possible glob pattern. If globbing fails, just return the existing error instead
-            // of the glob pattern error.
-            Err(e) => {
-                let globbed_paths = match glob::glob(s) {
-                    Ok(g) => g,
-                    Err(_) => return Err(e.into()),
-                };
-
-                let globbed_paths =
-                    globbed_paths
-                        .filter_map(|item| item.ok())
-                        .filter(|candidate| {
-                            candidate
-                                .metadata()
-                                .map(|meta| meta.file_type().is_file())
-                                .unwrap_or_default()
-                        });
-                paths.extend(globbed_paths);
-            }
-        }
-    }
-
-    paths.sort();
-    Ok(paths)
+    Box::new(paths)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::apply_str;
     use crate::collector::{Collector, Stats};
 
     static TEXT: &str = include_str!("../resources/sample.md");
@@ -136,8 +87,7 @@ mod tests {
     #[test]
     fn stats_are_correct() {
         let mut collector = Collector::new();
-
-        apply_str(None, TEXT, &mut collector).unwrap();
+        collector.apply_str(None, TEXT).unwrap();
 
         let Stats {
             word_count,
@@ -147,17 +97,5 @@ mod tests {
 
         assert_eq!(321, word_count, "{:?}", collector.overall_stats());
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
-    }
-
-    #[test]
-    fn can_parse_numbers() {
-        let mut collector = Collector::new();
-        apply_str(None, "He drove a V-6", &mut collector).unwrap();
-    }
-
-    #[test]
-    fn can_parse_times() {
-        let mut collector = Collector::new();
-        apply_str(None, "It was 10:30", &mut collector).unwrap();
     }
 }

@@ -1,9 +1,11 @@
 use prettytable::Table;
+use regex::Regex;
 use std::cmp;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Collector {
     stats: Vec<(Option<String>, Stats)>,
+    pattern: Regex,
 }
 
 #[derive(Debug, Default)]
@@ -30,7 +32,10 @@ impl Stats {
 
 impl Collector {
     pub fn new() -> Collector {
-        Default::default()
+        Collector {
+            stats: Vec::new(),
+            pattern: Regex::new("").unwrap(),
+        }
     }
 
     pub fn as_table(&self) -> Table {
@@ -103,6 +108,48 @@ impl Collector {
         table
     }
 
+    pub fn apply_str(&mut self, filename: Option<&str>, text: &str) -> crate::Result<()> {
+        let text = filter_comments(text);
+        let mut heading = None;
+        let mut stats = Stats::default();
+    
+        for line in text.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            
+            match line_kind(dbg!(line)) {
+                LineKind::Heading => match heading.take() {
+                    None => heading = Some(heading_name(line)),
+                    Some(prior_heading) => {
+                        self.push_with_heading(prior_heading, stats);
+                        stats = Stats::default();
+                    }
+                }
+    
+                LineKind::Paragraph => stats.push(self.word_count(line)),
+            }
+        }
+    
+        match heading {
+            None => {
+                if let Some(filename) = filename {
+                    self.push_with_heading(filename, stats)
+                } else {
+                    self.push(stats)
+                }
+            }
+    
+            Some(heading) => self.push_with_heading(heading, stats),
+        }
+    
+        Ok(())
+    }
+
+    fn word_count(&self, s: &str) -> u32 {
+        s.split_whitespace().flat_map(|s| s.split("---")).count() as u32
+    }
+
     pub fn push(&mut self, stats: Stats) {
         self.stats.push((None, stats));
     }
@@ -129,4 +176,48 @@ impl Collector {
             longest_paragraph,
         }
     }
+}
+
+enum LineKind {
+    Heading,
+    Paragraph,
+}
+
+fn line_kind(s: &str) -> LineKind {
+    if s.starts_with("#") {
+        LineKind::Heading
+    } else {
+        LineKind::Paragraph
+    }
+}
+
+fn heading_name(s: &str) -> String {
+    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
+        .to_owned()
+}
+
+fn filter_comments(text: &str) -> String {
+    let mut text = text;
+    let mut state = false;
+    let mut result = String::new();
+
+    while !text.is_empty() {
+        if !state {
+            if let Some(idx) = text.find("<!--") {
+                state = true;
+                result.push_str(&text[..idx]);
+                text = &text[idx..];
+            } else {
+                result.push_str(text);
+                return result;
+            }
+        } else {
+            if let Some(idx) = text.find("-->") {
+                state = false;
+                text = &text[(idx + 3)..];
+            }
+        }
+    }
+
+    result
 }

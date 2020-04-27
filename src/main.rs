@@ -2,8 +2,9 @@ mod app;
 mod collector;
 mod error;
 mod opt;
-mod parse;
 
-fn main() -> error::Result<()> {
-    app::Application.run(&opt::Opt::from_args())
+pub type Result<T, E = error::Error> = std::result::Result<T, E>;
+
+fn main() -> Result<()> {
+    app::Application::with_opts(opt::Opt::from_args()).run()
 }

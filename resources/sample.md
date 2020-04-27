@@ -4,7 +4,7 @@ Each morning began with Grier pretending to wake. Margaret's alarm sounded at ha
 
 She told her father that she had found a gym to join and that she was enjoying her time in France. He didn't believe her, but the lie comforted them both when they talked. Pretending to be happy was almost as good as happiness.
 
-The Denicourts lived on the northern fringe of Paris, so each day after breakfast Grier and Margaret took one bus into the city, walked four blocks, and took a second bus to the university. Grier had enrolled in four classes and attended two each day; Monday, Wednesday, and Friday, her last lecture of the day was taught by Margaret--Miss Reed to her students. For the first week, it seemed the only words Margaret spoke to her were in that class. Grier was satisfied with that arrangement.
+The Denicourts lived on the northern fringe of Paris, so each day after breakfast Grier and Margaret took one bus into the city, walked four blocks, and took a second bus to the university. Grier had enrolled in four classes and attended two each day; Monday, Wednesday, and Friday, her last lecture of the day was taught by Margaret---Miss Reed to her students. For the first week, it seemed the only words Margaret spoke to her were in that class. Grier was satisfied with that arrangement.
 
 Not happy, perhaps. But it was better to pretend to be happy. Today, however, Margaret spoke.
 

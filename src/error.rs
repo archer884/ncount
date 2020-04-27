@@ -1,27 +1,32 @@
-use crate::parse::Rule;
-use std::io;
-use std::result;
-
-pub type Result<T, E = Error> = result::Result<T, E>;
-
-type PestError = pest::error::Error<Rule>;
+use std::{error, fmt, io};
 
 #[derive(Debug)]
 pub enum Error {
     IO(io::Error),
-    Parse(PestError),
     Pattern(glob::PatternError),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::IO(e) => e.fmt(f),
+            Self::Pattern(e) => e.fmt(f),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::IO(e) => Some(e),
+            Self::Pattern(e) => Some(e),
+        }
+    }
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Error::IO(e)
-    }
-}
-
-impl From<PestError> for Error {
-    fn from(e: PestError) -> Self {
-        Error::Parse(e)
     }
 }
 

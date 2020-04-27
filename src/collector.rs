@@ -1,34 +1,14 @@
+mod stats;
+
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
 };
-use std::cmp;
+use stats::Stats;
 
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<(String, Stats)>,
-}
-
-#[derive(Debug, Default)]
-pub struct Stats {
-    pub word_count: u32,
-    pub paragraph_count: u32,
-    pub longest_paragraph: u32,
-}
-
-impl Stats {
-    pub fn push(&mut self, count: u32) {
-        self.word_count += count;
-        self.paragraph_count += 1;
-        self.longest_paragraph = cmp::max(self.longest_paragraph, count);
-    }
-
-    pub fn average_paragraph(&self) -> u32 {
-        match self.paragraph_count {
-            0 => 0,
-            x => self.word_count / x,
-        }
-    }
 }
 
 impl Collector {
@@ -90,22 +70,7 @@ impl Collector {
     }
 
     pub fn overall_stats(&self) -> Stats {
-        let (word_count, paragraph_count, longest_paragraph) = self.stats.iter().fold(
-            (0, 0, 0),
-            |(word_count, paragraph_count, longest_paragraph), stats| {
-                (
-                    word_count + stats.1.word_count,
-                    paragraph_count + stats.1.paragraph_count,
-                    cmp::max(longest_paragraph, stats.1.longest_paragraph),
-                )
-            },
-        );
-
-        Stats {
-            word_count,
-            paragraph_count,
-            longest_paragraph,
-        }
+        self.stats.iter().map(|(_, x)| x).collect()
     }
 }
 

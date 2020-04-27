@@ -1,11 +1,9 @@
 use prettytable::Table;
-use regex::Regex;
 use std::cmp;
 
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<(Option<String>, Stats)>,
-    pattern: Regex,
 }
 
 #[derive(Debug, Default)]
@@ -34,7 +32,6 @@ impl Collector {
     pub fn new() -> Collector {
         Collector {
             stats: Vec::new(),
-            pattern: Regex::new("").unwrap(),
         }
     }
 
@@ -117,17 +114,19 @@ impl Collector {
             if line.is_empty() {
                 continue;
             }
-            
-            match line_kind(dbg!(line)) {
-                LineKind::Heading => match heading.take() {
+
+            // Lines beginning with # are markdown headings
+            // The other kind of heading is not permitted. Get over it.
+            if line.starts_with('#') {
+                match heading.take() {
                     None => heading = Some(heading_name(line)),
-                    Some(prior_heading) => {
-                        self.push_with_heading(prior_heading, stats);
+                    Some(last_heading) => {
+                        self.push_with_heading(last_heading, stats);
                         stats = Stats::default();
                     }
                 }
-    
-                LineKind::Paragraph => stats.push(self.word_count(line)),
+            } else {
+                stats.push(self.word_count(line));
             }
         }
     
@@ -178,22 +177,8 @@ impl Collector {
     }
 }
 
-enum LineKind {
-    Heading,
-    Paragraph,
-}
-
-fn line_kind(s: &str) -> LineKind {
-    if s.starts_with("#") {
-        LineKind::Heading
-    } else {
-        LineKind::Paragraph
-    }
-}
-
 fn heading_name(s: &str) -> String {
-    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
-        .to_owned()
+    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace()).to_owned()
 }
 
 fn filter_comments(text: &str) -> String {
@@ -211,11 +196,9 @@ fn filter_comments(text: &str) -> String {
                 result.push_str(text);
                 return result;
             }
-        } else {
-            if let Some(idx) = text.find("-->") {
-                state = false;
-                text = &text[(idx + 3)..];
-            }
+        } else if let Some(idx) = text.find("-->") {
+            state = false;
+            text = &text[(idx + 3)..];
         }
     }
 

@@ -103,7 +103,7 @@ impl Collector {
         table
     }
 
-    pub fn apply_str(&mut self, filename: Option<&str>, text: &str) -> crate::Result<()> {
+    pub fn apply_str(&mut self, filename: &str, text: &str) -> crate::Result<()> {
         let text = filter_comments(text);
         let mut heading = None;
         let mut stats = Stats::default();
@@ -119,7 +119,7 @@ impl Collector {
                 match heading.take() {
                     None => heading = Some(heading_name(line)),
                     Some(last_heading) => {
-                        self.push_with_heading(last_heading, stats);
+                        self.push(last_heading, stats);
                         stats = Stats::default();
                     }
                 }
@@ -128,17 +128,10 @@ impl Collector {
             }
         }
 
-        match heading {
-            None => {
-                if let Some(filename) = filename {
-                    self.push_with_heading(filename, stats)
-                } else {
-                    self.push(stats)
-                }
-            }
-
-            Some(heading) => self.push_with_heading(heading, stats),
-        }
+        self.push(
+            heading.as_ref().map(AsRef::as_ref).unwrap_or(filename),
+            stats,
+        );
 
         Ok(())
     }
@@ -150,11 +143,7 @@ impl Collector {
         s.split_whitespace().flat_map(|s| s.split("---")).count() as u32
     }
 
-    pub fn push(&mut self, stats: Stats) {
-        self.stats.push((None, stats));
-    }
-
-    pub fn push_with_heading(&mut self, heading: impl Into<String>, stats: Stats) {
+    pub fn push(&mut self, heading: impl Into<String>, stats: Stats) {
         self.stats.push((Some(heading.into()), stats));
     }
 
@@ -205,4 +194,26 @@ fn filter_comments(text: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Collector, Stats};
+
+    static TEXT: &str = include_str!("../resources/sample.md");
+
+    #[test]
+    fn stats_are_correct() {
+        let mut collector = Collector::new();
+        collector.apply_str("Foo", TEXT).unwrap();
+
+        let Stats {
+            word_count,
+            paragraph_count,
+            ..
+        } = collector.overall_stats();
+
+        assert_eq!(321, word_count, "{:?}", collector.overall_stats());
+        assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
+    }
 }

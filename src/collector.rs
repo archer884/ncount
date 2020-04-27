@@ -8,7 +8,26 @@ use stats::Stats;
 
 #[derive(Debug)]
 pub struct Collector {
-    stats: Vec<(String, Stats)>,
+    stats: Vec<TaggedStats>,
+}
+
+#[derive(Debug)]
+pub struct TaggedStats {
+    tag: String,
+    stats: Stats,
+}
+
+impl TaggedStats {
+    fn new(tag: impl Into<String>, stats: Stats) -> Self {
+        Self {
+            tag: tag.into(),
+            stats,
+        }
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
 }
 
 impl Collector {
@@ -66,11 +85,11 @@ impl Collector {
     }
 
     pub fn push(&mut self, heading: impl Into<String>, stats: Stats) {
-        self.stats.push((heading.into(), stats));
+        self.stats.push(TaggedStats::new(heading, stats));
     }
 
     pub fn overall_stats(&self) -> Stats {
-        self.stats.iter().map(|(_, x)| x).collect()
+        self.stats.iter().map(|x| &x.stats).collect()
     }
 }
 
@@ -119,24 +138,24 @@ fn add_header(table: &mut Table) {
     row.add_cell(Cell::new_align("Words", Alignment::RIGHT));
 }
 
-fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a (String, Stats)> + 'a) {
-    for (heading, stats) in data {
+fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a TaggedStats> + 'a) {
+    for item in data {
         let row = table.add_empty_row();
-        row.add_cell(Cell::new_align(heading, Alignment::LEFT));
+        row.add_cell(Cell::new_align(item.tag(), Alignment::LEFT));
         row.add_cell(Cell::new_align(
-            &stats.paragraph_count.to_string(),
+            &item.stats.paragraph_count.to_string(),
             Alignment::RIGHT,
         ));
         row.add_cell(Cell::new_align(
-            &stats.average_paragraph().to_string(),
+            &item.stats.average_paragraph().to_string(),
             Alignment::RIGHT,
         ));
         row.add_cell(Cell::new_align(
-            &stats.longest_paragraph.to_string(),
+            &item.stats.longest_paragraph.to_string(),
             Alignment::RIGHT,
         ));
         row.add_cell(Cell::new_align(
-            &stats.word_count.to_string(),
+            &item.stats.word_count.to_string(),
             Alignment::RIGHT,
         ));
     }

@@ -33,7 +33,8 @@ impl Application {
             .to_string_lossy();
 
         self.collector
-            .apply_str(&*filename, &fs::read_to_string(path)?)
+            .apply_str(&*filename, &fs::read_to_string(path)?);
+        Ok(())
     }
 }
 

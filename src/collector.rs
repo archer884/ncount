@@ -44,7 +44,7 @@ impl Collector {
         table
     }
 
-    pub fn apply_str(&mut self, filename: &str, text: &str) -> crate::Result<()> {
+    pub fn apply_str(&mut self, filename: &str, text: &str) {
         let text = filter_comments(text);
         let mut heading = None;
         let mut stats = Stats::default();
@@ -61,6 +61,7 @@ impl Collector {
                     None => heading = Some(heading_name(line)),
                     Some(last_heading) => {
                         self.push(last_heading, stats);
+                        heading = Some(heading_name(line));
                         stats = Stats::default();
                     }
                 }
@@ -73,8 +74,6 @@ impl Collector {
             heading.as_ref().map(AsRef::as_ref).unwrap_or(filename),
             stats,
         );
-
-        Ok(())
     }
 
     fn word_count(&self, s: &str) -> u32 {
@@ -191,7 +190,7 @@ mod tests {
     #[test]
     fn stats_are_correct() {
         let mut collector = Collector::new();
-        collector.apply_str("Foo", TEXT).unwrap();
+        collector.apply_str("Foo", TEXT);
 
         let Stats {
             word_count,

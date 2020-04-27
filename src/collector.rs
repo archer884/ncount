@@ -30,9 +30,7 @@ impl Stats {
 
 impl Collector {
     pub fn new() -> Collector {
-        Collector {
-            stats: Vec::new(),
-        }
+        Collector { stats: Vec::new() }
     }
 
     pub fn as_table(&self) -> Table {
@@ -109,7 +107,7 @@ impl Collector {
         let text = filter_comments(text);
         let mut heading = None;
         let mut stats = Stats::default();
-    
+
         for line in text.lines() {
             if line.is_empty() {
                 continue;
@@ -129,7 +127,7 @@ impl Collector {
                 stats.push(self.word_count(line));
             }
         }
-    
+
         match heading {
             None => {
                 if let Some(filename) = filename {
@@ -138,14 +136,17 @@ impl Collector {
                     self.push(stats)
                 }
             }
-    
+
             Some(heading) => self.push_with_heading(heading, stats),
         }
-    
+
         Ok(())
     }
 
     fn word_count(&self, s: &str) -> u32 {
+        // Words are usually separated by spaces, but they
+        // could be separated by m-dashes instead. We do not
+        // count hyphenated words as two words.
         s.split_whitespace().flat_map(|s| s.split("---")).count() as u32
     }
 
@@ -178,7 +179,8 @@ impl Collector {
 }
 
 fn heading_name(s: &str) -> String {
-    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace()).to_owned()
+    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
+        .to_owned()
 }
 
 fn filter_comments(text: &str) -> String {

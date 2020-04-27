@@ -1,7 +1,4 @@
-use crate::{
-    collector::Collector,
-    opt::Opt,
-};
+use crate::{collector::Collector, opt::Opt};
 use std::path::{Path, PathBuf};
 use std::{fs, iter};
 
@@ -20,7 +17,7 @@ impl Application {
 
     pub fn run(&mut self) -> crate::Result<()> {
         let paths: Vec<_> = self.options.paths().flat_map(extract_paths).collect();
-         
+
         for path in paths {
             self.apply_path(&path)?;
         }
@@ -45,7 +42,7 @@ fn extract_paths(path: &str) -> Box<dyn Iterator<Item = PathBuf>> {
 
 fn literal_path(path: &str, metadata: fs::Metadata) -> Box<dyn Iterator<Item = PathBuf>> {
     if metadata.is_file() {
-        return Box::new(iter::once(path.into()))
+        return Box::new(iter::once(path.into()));
     }
 
     let paths = walkdir::WalkDir::new(path)
@@ -65,7 +62,7 @@ fn literal_path(path: &str, metadata: fs::Metadata) -> Box<dyn Iterator<Item = P
 fn glob_pattern(path: &str) -> Box<dyn Iterator<Item = PathBuf>> {
     let paths = match glob::glob(path) {
         Ok(paths) => paths,
-        Err(_) => return Box::new(iter::empty())
+        Err(_) => return Box::new(iter::empty()),
     };
 
     let paths = paths.filter_map(|item| item.ok()).filter(|candidate| {

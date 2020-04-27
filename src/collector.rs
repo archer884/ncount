@@ -3,7 +3,7 @@ use std::cmp;
 
 #[derive(Debug)]
 pub struct Collector {
-    stats: Vec<(Option<String>, Stats)>,
+    stats: Vec<(String, Stats)>,
 }
 
 #[derive(Debug, Default)]
@@ -57,7 +57,7 @@ impl Collector {
         for (heading, stats) in self.stats.iter() {
             let row = table.add_empty_row();
             row.add_cell(Cell::new_align(
-                heading.as_ref().map(AsRef::as_ref).unwrap_or("Untitled"),
+                heading,
                 Alignment::LEFT,
             ));
             row.add_cell(Cell::new_align(
@@ -144,7 +144,7 @@ impl Collector {
     }
 
     pub fn push(&mut self, heading: impl Into<String>, stats: Stats) {
-        self.stats.push((Some(heading.into()), stats));
+        self.stats.push((heading.into(), stats));
     }
 
     pub fn overall_stats(&self) -> Stats {

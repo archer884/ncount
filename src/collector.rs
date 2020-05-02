@@ -130,33 +130,36 @@ fn add_format(table: &mut Table) {
 
 fn add_header(table: &mut Table) {
     let row = table.add_empty_row();
-    row.add_cell(Cell::new_align("§", Alignment::LEFT));
-    row.add_cell(Cell::new_align("Count ¶", Alignment::RIGHT));
-    row.add_cell(Cell::new_align("Avg ¶", Alignment::RIGHT));
-    row.add_cell(Cell::new_align("Long ¶", Alignment::RIGHT));
-    row.add_cell(Cell::new_align("Words", Alignment::RIGHT));
+    row.add_cell(build_cell("§", Alignment::LEFT));
+    row.add_cell(build_cell("Count ¶", Alignment::RIGHT));
+    row.add_cell(build_cell("Avg ¶", Alignment::RIGHT));
+    row.add_cell(build_cell("Long ¶", Alignment::RIGHT));
+    row.add_cell(build_cell("Words", Alignment::RIGHT));
+    row.add_cell(build_cell("Total", Alignment::RIGHT));
 }
 
 fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a TaggedStats> + 'a) {
+    let mut running_count = 0;
     for item in data {
+        let stats = &item.stats;
+        running_count += stats.word_count;
+
         let row = table.add_empty_row();
-        row.add_cell(Cell::new_align(item.tag(), Alignment::LEFT));
-        row.add_cell(Cell::new_align(
-            &item.stats.paragraph_count.to_string(),
+        row.add_cell(build_cell(item.tag(), Alignment::LEFT));
+        row.add_cell(build_cell(
+            stats.paragraph_count.to_string(),
             Alignment::RIGHT,
         ));
-        row.add_cell(Cell::new_align(
-            &item.stats.average_paragraph().to_string(),
+        row.add_cell(build_cell(
+            stats.average_paragraph().to_string(),
             Alignment::RIGHT,
         ));
-        row.add_cell(Cell::new_align(
-            &item.stats.longest_paragraph.to_string(),
+        row.add_cell(build_cell(
+            stats.longest_paragraph.to_string(),
             Alignment::RIGHT,
         ));
-        row.add_cell(Cell::new_align(
-            &item.stats.word_count.to_string(),
-            Alignment::RIGHT,
-        ));
+        row.add_cell(build_cell(stats.word_count.to_string(), Alignment::RIGHT));
+        row.add_cell(build_cell(running_count.to_string(), Alignment::RIGHT));
     }
 }
 
@@ -201,4 +204,8 @@ mod tests {
         assert_eq!(321, word_count, "{:?}", collector.overall_stats());
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
     }
+}
+
+fn build_cell(content: impl AsRef<str>, alignment: Alignment) -> Cell {
+    Cell::new_align(content.as_ref(), alignment)
 }

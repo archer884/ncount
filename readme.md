@@ -9,7 +9,7 @@ Updated to support glob patterns (even on Windows!) and multiple directories.
 ## Usage
 
 ```shell
-$ ncount ./dir/
+$ ncount ./dir/ --detail
  §             Count ¶   Avg ¶   Long ¶   Words
  Chapter 1.1        43      37       94    1601
  Chapter 1.2        52      30       86    1607

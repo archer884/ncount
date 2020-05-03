@@ -1,8 +1,13 @@
 use structopt::StructOpt;
 
+/// A word count program.
 #[derive(Debug, StructOpt)]
 pub struct Opt {
     paths: Vec<String>,
+
+    /// Print detailed document information
+    #[structopt(short, long)]
+    detail: bool,
 }
 
 impl Opt {
@@ -15,6 +20,10 @@ impl Opt {
             .iter()
             .map(AsRef::as_ref)
             .once_if_empty_with(|| ".")
+    }
+
+    pub fn detail(&self) -> bool {
+        self.detail
     }
 }
 

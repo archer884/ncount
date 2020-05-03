@@ -6,7 +6,7 @@ use prettytable::{
 };
 use stats::Stats;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
 }
@@ -33,15 +33,6 @@ impl TaggedStats {
 impl Collector {
     pub fn new() -> Collector {
         Collector { stats: Vec::new() }
-    }
-
-    pub fn as_table(&self) -> Table {
-        let mut table = Table::new();
-        add_format(&mut table);
-        add_header(&mut table);
-        add_rows(&mut table, &self.stats);
-        add_footer(&mut table, self.overall_stats());
-        table
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
@@ -90,6 +81,21 @@ impl Collector {
     pub fn overall_stats(&self) -> Stats {
         self.stats.iter().map(|x| &x.stats).collect()
     }
+
+    pub fn as_table(&self, detail: bool) -> Table {
+        let mut table = Table::new();
+
+        add_format(&mut table);
+        add_header(&mut table, detail);
+        add_rows(&mut table, &self.stats, detail);
+
+        // Nothing the footer prints makes sense if we're only printing the word count.
+        if detail {
+            add_footer(&mut table, self.overall_stats());
+        }
+
+        table
+    }
 }
 
 fn heading_name(s: &str) -> String {
@@ -128,17 +134,25 @@ fn add_format(table: &mut Table) {
     table.set_format(format);
 }
 
-fn add_header(table: &mut Table) {
+fn add_header(table: &mut Table, detail: bool) {
     let row = table.add_empty_row();
     row.add_cell(build_cell("§", Alignment::LEFT));
-    row.add_cell(build_cell("Count ¶", Alignment::RIGHT));
-    row.add_cell(build_cell("Avg ¶", Alignment::RIGHT));
-    row.add_cell(build_cell("Long ¶", Alignment::RIGHT));
+
+    if detail {
+        row.add_cell(build_cell("Count ¶", Alignment::RIGHT));
+        row.add_cell(build_cell("Avg ¶", Alignment::RIGHT));
+        row.add_cell(build_cell("Long ¶", Alignment::RIGHT));
+    }
+
     row.add_cell(build_cell("Words", Alignment::RIGHT));
     row.add_cell(build_cell("Total", Alignment::RIGHT));
 }
 
-fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a TaggedStats> + 'a) {
+fn add_rows<'a>(
+    table: &mut Table,
+    data: impl IntoIterator<Item = &'a TaggedStats> + 'a,
+    detail: bool,
+) {
     let mut running_count = 0;
     for item in data {
         let stats = &item.stats;
@@ -146,18 +160,22 @@ fn add_rows<'a>(table: &mut Table, data: impl IntoIterator<Item = &'a TaggedStat
 
         let row = table.add_empty_row();
         row.add_cell(build_cell(item.tag(), Alignment::LEFT));
-        row.add_cell(build_cell(
-            stats.paragraph_count.to_string(),
-            Alignment::RIGHT,
-        ));
-        row.add_cell(build_cell(
-            stats.average_paragraph().to_string(),
-            Alignment::RIGHT,
-        ));
-        row.add_cell(build_cell(
-            stats.longest_paragraph.to_string(),
-            Alignment::RIGHT,
-        ));
+
+        if detail {
+            row.add_cell(build_cell(
+                stats.paragraph_count.to_string(),
+                Alignment::RIGHT,
+            ));
+            row.add_cell(build_cell(
+                stats.average_paragraph().to_string(),
+                Alignment::RIGHT,
+            ));
+            row.add_cell(build_cell(
+                stats.longest_paragraph.to_string(),
+                Alignment::RIGHT,
+            ));
+        }
+
         row.add_cell(build_cell(stats.word_count.to_string(), Alignment::RIGHT));
         row.add_cell(build_cell(running_count.to_string(), Alignment::RIGHT));
     }
@@ -192,7 +210,7 @@ mod tests {
 
     #[test]
     fn stats_are_correct() {
-        let mut collector = Collector::new();
+        let mut collector = Collector::default();
         collector.apply_str("Foo", TEXT);
 
         let Stats {

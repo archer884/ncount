@@ -8,10 +8,10 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn with_opts(options: Opt) -> Self {
+    pub fn new(options: Opt) -> Self {
         Application {
-            options,
             collector: Collector::new(),
+            options,
         }
     }
 
@@ -22,7 +22,7 @@ impl Application {
             self.apply_path(&path)?;
         }
 
-        println!("{}", self.collector.as_table());
+        println!("{}", self.collector.as_table(self.options.detail()));
         Ok(())
     }
 

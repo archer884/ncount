@@ -8,6 +8,10 @@ pub struct Opt {
     /// Print detailed document information
     #[structopt(short, long)]
     detail: bool,
+
+    /// Print detailed document information (alias for detail)
+    #[structopt(short, long)]
+    verbose: bool,
 }
 
 impl Opt {
@@ -23,7 +27,7 @@ impl Opt {
     }
 
     pub fn detail(&self) -> bool {
-        self.detail
+        self.detail || self.verbose
     }
 }
 

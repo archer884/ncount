@@ -214,8 +214,8 @@ mod tests {
         collector.apply_str("Foo", TEXT);
 
         let Stats {
-            word_count,
             paragraph_count,
+            word_count,
             ..
         } = collector.overall_stats();
 

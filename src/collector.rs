@@ -4,11 +4,13 @@ use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
 };
+use regex::Regex;
 use stats::Stats;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
+    pattern: Regex,
 }
 
 #[derive(Debug)]
@@ -32,11 +34,14 @@ impl TaggedStats {
 
 impl Collector {
     pub fn new() -> Collector {
-        Collector { stats: Vec::new() }
+        Collector {
+            stats: Vec::new(),
+            pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
+        }
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
-        let text = filter_comments(text);
+        let text = self.pattern.replace_all(text, "");
         let mut heading = None;
         let mut stats = Stats::default();
 
@@ -101,30 +106,6 @@ impl Collector {
 fn heading_name(s: &str) -> String {
     s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
         .to_owned()
-}
-
-fn filter_comments(text: &str) -> String {
-    let mut text = text;
-    let mut state = false;
-    let mut result = String::new();
-
-    while !text.is_empty() {
-        if !state {
-            if let Some(idx) = text.find("<!--") {
-                state = true;
-                result.push_str(&text[..idx]);
-                text = &text[idx..];
-            } else {
-                result.push_str(text);
-                return result;
-            }
-        } else if let Some(idx) = text.find("-->") {
-            state = false;
-            text = &text[(idx + 3)..];
-        }
-    }
-
-    result
 }
 
 fn add_format(table: &mut Table) {
@@ -202,6 +183,10 @@ fn add_footer(table: &mut Table, stats: Stats) {
     ));
 }
 
+fn build_cell(content: impl AsRef<str>, alignment: Alignment) -> Cell {
+    Cell::new_align(content.as_ref(), alignment)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Collector, Stats};
@@ -210,7 +195,7 @@ mod tests {
 
     #[test]
     fn stats_are_correct() {
-        let mut collector = Collector::default();
+        let mut collector = Collector::new();
         collector.apply_str("Foo", TEXT);
 
         let Stats {
@@ -222,8 +207,4 @@ mod tests {
         assert_eq!(321, word_count, "{:?}", collector.overall_stats());
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
     }
-}
-
-fn build_cell(content: impl AsRef<str>, alignment: Alignment) -> Cell {
-    Cell::new_align(content.as_ref(), alignment)
 }

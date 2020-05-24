@@ -1,0 +1,44 @@
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use regex::Regex;
+
+static TEXT: &str = include_str!("../resources/sample.md");
+
+fn filter_old(text: &str) -> String {
+    let mut text = text;
+    let mut state = false;
+    let mut result = String::new();
+
+    while !text.is_empty() {
+        if !state {
+            if let Some(idx) = text.find("<!--") {
+                state = true;
+                result.push_str(&text[..idx]);
+                text = &text[idx..];
+            } else {
+                result.push_str(text);
+                return result;
+            }
+        } else if let Some(idx) = text.find("-->") {
+            state = false;
+            text = &text[(idx + 3)..];
+        }
+    }
+
+    result
+}
+
+fn imperative(c: &mut Criterion) {
+    c.bench_function("filter", |b| {
+        b.iter(|| black_box(filter_old(black_box(TEXT))));
+    });
+}
+
+fn regular_expression(c: &mut Criterion) {
+    let pattern = Regex::new("pattern goes here").unwrap();
+    c.bench_function("regex", |b| {
+        b.iter(|| black_box(pattern.replace_all(black_box(TEXT), "")));
+    });
+}
+
+criterion_group!(filter, imperative, regular_expression);
+criterion_main!(filter);

@@ -26,3 +26,6 @@ criterion = "0.3"
 [[bench]]
 name = "filter_comments"
 harness = false
+
+[profile.release]
+lto = "thin"

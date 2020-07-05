@@ -29,7 +29,7 @@ fn filter_old(text: &str) -> String {
 
 fn benchmarks(c: &mut Criterion) {
     let pattern = Regex::new("pattern goes here").unwrap();
-    
+
     c.bench_function("filter", |b| {
         b.iter(|| black_box(filter_old(black_box(TEXT))));
     });

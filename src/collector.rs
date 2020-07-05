@@ -6,6 +6,8 @@ use prettytable::{
 };
 use regex::Regex;
 use stats::Stats;
+use std::path::Path;
+use std::{fs, io};
 
 #[derive(Debug)]
 pub struct Collector {
@@ -38,6 +40,16 @@ impl Collector {
             stats: Vec::new(),
             pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
         }
+    }
+
+    pub fn apply_path(&mut self, path: &Path) -> crate::Result<()> {
+        let filename = path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Cannot apply directory path"))?
+            .to_string_lossy();
+
+        self.apply_str(&*filename, &fs::read_to_string(path)?);
+        Ok(())
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {

@@ -1,13 +1,14 @@
-use crate::{collector::Collector, opt::Opt};
 use std::path::PathBuf;
 
+use crate::{collector::Collector, opt::Opts};
+
 pub struct Application {
-    options: Opt,
+    options: Opts,
     collector: Collector,
 }
 
 impl Application {
-    pub fn new(options: Opt) -> Self {
+    pub fn new(options: Opts) -> Self {
         Application {
             collector: Collector::new(),
             options,

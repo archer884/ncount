@@ -1,13 +1,14 @@
+use std::{fs, io, path::Path};
+
 mod stats;
 
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
 };
+
 use regex::Regex;
 use stats::Stats;
-use std::path::Path;
-use std::{fs, io};
 
 #[derive(Debug)]
 pub struct Collector {
@@ -58,7 +59,7 @@ impl Collector {
         let mut stats = Stats::default();
 
         for line in text.lines() {
-            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphabetic()) {
+            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphanumeric()) {
                 continue;
             }
 
@@ -116,6 +117,7 @@ impl Collector {
 }
 
 fn heading_name(s: &str) -> String {
+    dbg!(s);
     s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
         .to_owned()
 }

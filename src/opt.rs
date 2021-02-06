@@ -2,7 +2,7 @@ use structopt::StructOpt;
 
 /// A word count program.
 #[derive(Debug, StructOpt)]
-pub struct Opt {
+pub struct Opts {
     paths: Vec<String>,
 
     /// Print detailed document information
@@ -14,8 +14,8 @@ pub struct Opt {
     verbose: bool,
 }
 
-impl Opt {
-    pub fn from_args() -> Opt {
+impl Opts {
+    pub fn from_args() -> Opts {
         StructOpt::from_args()
     }
 

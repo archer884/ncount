@@ -117,7 +117,6 @@ impl Collector {
 }
 
 fn heading_name(s: &str) -> String {
-    dbg!(s);
     s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
         .to_owned()
 }

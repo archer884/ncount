@@ -96,6 +96,10 @@ impl Collector {
         self.stats.push(TaggedStats::new(heading, stats));
     }
 
+    pub fn filter_by_heading(&mut self, filter: &str) {
+        self.stats.retain(|x| x.tag().contains(filter));
+    }
+
     pub fn overall_stats(&self) -> Stats {
         self.stats.iter().map(|x| &x.stats).collect()
     }

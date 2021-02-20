@@ -3,7 +3,12 @@ use structopt::StructOpt;
 /// A word count program.
 #[derive(Debug, StructOpt)]
 pub struct Opts {
+    /// Paths (or globs) to be read
     paths: Vec<String>,
+
+    /// Filter results by heading
+    #[structopt(short, long)]
+    heading: Option<String>,
 
     /// Print detailed document information
     #[structopt(short, long)]
@@ -24,6 +29,10 @@ impl Opts {
             .iter()
             .map(AsRef::as_ref)
             .once_if_empty_with(|| ".")
+    }
+
+    pub fn filter_by_heading(&self) -> Option<&str> {
+        self.heading.as_ref().map(AsRef::as_ref)
     }
 
     pub fn detail(&self) -> bool {

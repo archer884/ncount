@@ -20,6 +20,10 @@ impl Application {
             self.collector.apply_path(&path)?;
         }
 
+        if let Some(filter) = self.options.filter_by_heading() {
+            self.collector.filter_by_heading(filter);
+        }
+
         println!("{}", self.collector.as_table(self.options.detail()));
         Ok(())
     }

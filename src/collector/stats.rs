@@ -25,11 +25,11 @@ impl Stats {
 impl<T: Borrow<Stats>> FromIterator<T> for Stats {
     fn from_iter<I: IntoIterator<Item = T>>(items: I) -> Self {
         let mut stats = Stats::default();
-        for x in items {
-            let x = x.borrow();
-            stats.word_count += x.word_count;
-            stats.paragraph_count += x.paragraph_count;
-            stats.longest_paragraph = cmp::max(stats.longest_paragraph, x.longest_paragraph);
+        for current in items {
+            let current = current.borrow();
+            stats.word_count += current.word_count;
+            stats.paragraph_count += current.paragraph_count;
+            stats.longest_paragraph = cmp::max(stats.longest_paragraph, current.longest_paragraph);
         }
         stats
     }

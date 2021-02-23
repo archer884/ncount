@@ -28,5 +28,9 @@ criterion = "0.3.4"
 name = "filter_comments"
 harness = false
 
+[[bench]]
+name = "collect"
+harness = false
+
 [profile.release]
 lto = "thin"

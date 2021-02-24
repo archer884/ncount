@@ -97,7 +97,9 @@ impl Collector {
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {
-        self.stats.retain(|x| x.tag().contains(filter));
+        let filter = filter.to_ascii_lowercase();
+        self.stats
+            .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))
     }
 
     pub fn overall_stats(&self) -> Stats {

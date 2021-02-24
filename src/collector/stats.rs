@@ -20,6 +20,10 @@ impl Stats {
             x => self.word_count / x,
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.word_count == 0
+    }
 }
 
 impl<T: Borrow<Stats>> FromIterator<T> for Stats {

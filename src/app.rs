@@ -16,7 +16,7 @@ impl Application {
     }
 
     pub fn run(&mut self) -> crate::Result<()> {
-        for path in read_paths(self.options.paths()) {
+        for path in read_paths(self.options.paths().inspect(|&path| println!("{}", path))) {
             self.collector.apply_path(&path)?;
         }
 
@@ -29,8 +29,8 @@ impl Application {
     }
 }
 
-fn read_paths<'a>(paths: impl Iterator<Item = &'a str> + 'a) -> impl Iterator<Item = PathBuf> + 'a {
-    paths
+fn read_paths<'a>(paths: impl Iterator<Item = &'a str> + 'a) -> Vec<PathBuf> {
+    let mut paths: Vec<_> = paths
         .into_iter()
         .filter_map(|path| normal_paths::extract_paths(path).ok())
         .flatten()
@@ -42,4 +42,9 @@ fn read_paths<'a>(paths: impl Iterator<Item = &'a str> + 'a) -> impl Iterator<It
                 None
             }
         })
+        .collect();
+
+    // macOS likes to send files in non-lexical order
+    paths.sort();
+    paths
 }

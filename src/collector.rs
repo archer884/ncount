@@ -120,9 +120,13 @@ impl Collector {
     }
 }
 
+/// Extract the heading name from a heading line
+///
+/// This function is also meant to remove formatting so that the heading can
+/// be displayed without things like asterisks, etc.
 fn heading_name(s: &str) -> String {
-    s.trim_start_matches(|x: char| x == '#' || x.is_whitespace())
-        .to_owned()
+    s.trim_start_matches(|u: char| u == '#' || u.is_whitespace())
+        .replace(|u: char| u == '*' || u == '_', "")
 }
 
 fn add_format(table: &mut Table) {
@@ -158,6 +162,10 @@ fn add_rows<'a>(
 
         let row = table.add_empty_row();
         row.add_cell(build_cell(item.tag(), Alignment::LEFT));
+
+        if stats.is_empty() {
+            continue;
+        }
 
         if detail {
             row.add_cell(build_cell(

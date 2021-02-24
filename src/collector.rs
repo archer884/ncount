@@ -7,13 +7,13 @@ use prettytable::{
     Cell, Table,
 };
 
-use regex::Regex;
+use regex::{Regex, bytes::RegexBuilder};
 use stats::Stats;
 
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
-    pattern: Regex,
+    comment_pattern: Regex,
 }
 
 #[derive(Debug)]
@@ -39,7 +39,7 @@ impl Collector {
     pub fn new() -> Collector {
         Collector {
             stats: Vec::new(),
-            pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
+            comment_pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
         }
     }
 
@@ -54,7 +54,7 @@ impl Collector {
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
-        let text = self.pattern.replace_all(text, "");
+        let text = self.comment_pattern.replace_all(text, "");
         let mut heading = None;
         let mut stats = Stats::default();
 
@@ -97,9 +97,16 @@ impl Collector {
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {
-        let filter = filter.to_ascii_lowercase();
-        self.stats
-            .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))
+        match RegexBuilder::new(filter).case_insensitive(true).build() {
+            Ok(filter) => {
+                self.stats.retain(|x| filter.is_match(x.tag().as_bytes()));
+            }
+            Err(_) => {
+                let filter = filter.to_ascii_lowercase();
+                self.stats
+                    .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))        
+            }
+        }
     }
 
     pub fn overall_stats(&self) -> Stats {

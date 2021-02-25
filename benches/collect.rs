@@ -1,6 +1,7 @@
-// This benchmark has been left in so that anyone who gets the bright idea to
-// use a regular expression to perform word counting will know better. In a
-// word: DON'T. Regexes are about 50% slower than the compound split.
+// As you can see by viewing the results of this updated benchmark,
+// the compound split strategy is slowed significantly by the necessity
+// to check the word-iness of any given word. Much slower and it might
+// make more sense to use the regex instead.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use regex::Regex;
@@ -18,7 +19,14 @@ impl WordCount for DefaultWordCount {
         // Words are usually separated by spaces, but they
         // could be separated by m-dashes instead. We do not
         // count hyphenated words as two words.
-        s.split_whitespace().flat_map(|s| s.split("---")).count() as u32
+        //
+        // The filter has been added in order to prevent
+        // quotes, followed by emdashes, being counted as
+        // words.
+        s.split_whitespace()
+            .flat_map(|s| s.split("---"))
+            .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
+            .count() as u32
     }
 }
 

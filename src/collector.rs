@@ -89,7 +89,14 @@ impl Collector {
         // Words are usually separated by spaces, but they
         // could be separated by m-dashes instead. We do not
         // count hyphenated words as two words.
-        s.split_whitespace().flat_map(|s| s.split("---")).count() as u32
+        //
+        // The filter has been added in order to prevent
+        // quotes, followed by emdashes, being counted as
+        // words.
+        s.split_whitespace()
+            .flat_map(|s| s.split("---"))
+            .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
+            .count() as u32
     }
 
     pub fn push(&mut self, heading: impl Into<String>, stats: Stats) {
@@ -240,5 +247,22 @@ mod tests {
 
         assert_eq!(321, word_count, "{:?}", collector.overall_stats());
         assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
+    }
+
+    #[test]
+    fn count_handles_quotes_and_dashes() {
+        let text = "---what?!";
+        let mut collector = Collector::new();
+
+        collector.apply_str("Foo", text);
+
+        let Stats {
+            paragraph_count,
+            word_count,
+            ..
+        } = collector.overall_stats();
+
+        assert_eq!(1, paragraph_count);
+        assert_eq!(1, word_count);
     }
 }

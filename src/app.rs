@@ -16,7 +16,7 @@ impl Application {
     }
 
     pub fn run(&mut self) -> crate::Result<()> {
-        for path in read_paths(self.options.paths().inspect(|&path| println!("{}", path))) {
+        for path in read_paths(self.options.paths()) {
             self.collector.apply_path(&path)?;
         }
 

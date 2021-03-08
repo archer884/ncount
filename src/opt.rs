@@ -7,7 +7,7 @@ pub struct Opts {
     paths: Vec<String>,
 
     /// Filter results by heading
-    #[structopt(short, long)]
+    #[structopt(short = "f", long = "filter")]
     heading: Option<String>,
 
     /// Print detailed document information

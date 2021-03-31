@@ -1,6 +1,6 @@
 [package]
 name = "ncount"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2018"
 authors = ["J/A <archer884@gmail.com>"]
 license = "Unlicense"
@@ -16,7 +16,6 @@ A word count tool intended to derive useful stats from markdown.
 [dependencies]
 glob = "0.3.0"
 normal-paths = "0.1.0"
-paragraphs = { path = "../paragraphs/" }
 prettytable-rs = "0.8.0"
 regex = "1.4.5"
 structopt = "0.3.21"

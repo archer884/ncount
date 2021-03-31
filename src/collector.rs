@@ -2,21 +2,17 @@ use std::{fs, io, path::Path};
 
 mod stats;
 
-use paragraphs::Paragrapher;
-
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
 };
 
-use regex::{bytes::RegexBuilder, Regex};
+use regex::bytes::RegexBuilder;
 use stats::Stats;
 
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
-    comment_pattern: Regex,
-    paragrapher: Paragrapher,
 }
 
 #[derive(Debug)]
@@ -40,11 +36,7 @@ impl TaggedStats {
 
 impl Collector {
     pub fn new() -> Collector {
-        Collector {
-            stats: Vec::new(),
-            comment_pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
-            paragrapher: Paragrapher::new(),
-        }
+        Collector { stats: Vec::new() }
     }
 
     pub fn apply_path(&mut self, path: &Path) -> crate::Result<()> {
@@ -58,27 +50,28 @@ impl Collector {
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
+        let text = filter_comments(text);
         let mut heading = None;
         let mut stats = Stats::default();
 
-        for paragraph in self.paragrapher.paragraphs(text) {
-            if paragraph.is_empty() {
+        for line in text.lines() {
+            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphanumeric()) {
                 continue;
             }
 
             // Lines beginning with # are markdown headings
             // The other kind of heading is not permitted. Get over it.
-            if paragraph.first().starts_with('#') {
+            if line.starts_with('#') {
                 match heading.take() {
-                    None => heading = Some(heading_name(&paragraph.to_string())),
+                    None => heading = Some(heading_name(line)),
                     Some(last_heading) => {
                         self.stats.push(TaggedStats::new(last_heading, stats));
-                        heading = Some(heading_name(&paragraph.to_string()));
+                        heading = Some(heading_name(line));
                         stats = Stats::default();
                     }
                 }
             } else {
-                stats.push(self.word_count(paragraph.pieces()));
+                stats.push(self.word_count(line));
             }
         }
 
@@ -88,7 +81,7 @@ impl Collector {
         ))
     }
 
-    fn word_count(&self, s: &[&str]) -> u32 {
+    fn word_count(&self, s: &str) -> u32 {
         // Words are usually separated by spaces, but they
         // could be separated by m-dashes instead. We do not
         // count hyphenated words as two words.
@@ -96,9 +89,7 @@ impl Collector {
         // The filter has been added in order to prevent
         // quotes, followed by emdashes, being counted as
         // words.
-        s.iter()
-            .map(|&part| part.split_whitespace())
-            .flatten()
+        s.split_whitespace()
             .flat_map(|s| s.split("---"))
             .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
             .count() as u32
@@ -135,6 +126,30 @@ impl Collector {
 
         table
     }
+}
+
+fn filter_comments(text: &str) -> String {
+    let mut text = text;
+    let mut state = false;
+    let mut result = String::with_capacity(text.len());
+
+    while !text.is_empty() {
+        if !state {
+            if let Some(idx) = text.find("<!--") {
+                state = true;
+                result.push_str(&text[..idx]);
+                text = &text[idx..];
+            } else {
+                result.push_str(text);
+                return result;
+            }
+        } else if let Some(idx) = text.find("-->") {
+            state = false;
+            text = &text[(idx + 3)..];
+        }
+    }
+
+    result
 }
 
 /// Extract the heading name from a heading line

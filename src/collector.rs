@@ -2,18 +2,21 @@ use std::{fs, io, path::Path};
 
 mod stats;
 
+use paragraphs::Paragrapher;
+
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
 };
 
-use regex::{Regex, bytes::RegexBuilder};
+use regex::{bytes::RegexBuilder, Regex};
 use stats::Stats;
 
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
     comment_pattern: Regex,
+    paragrapher: Paragrapher,
 }
 
 #[derive(Debug)]
@@ -40,6 +43,7 @@ impl Collector {
         Collector {
             stats: Vec::new(),
             comment_pattern: Regex::new(r#"(?s)<!--.*?-->"#).unwrap(),
+            paragrapher: Paragrapher::new(),
         }
     }
 
@@ -54,38 +58,37 @@ impl Collector {
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
-        let text = self.comment_pattern.replace_all(text, "");
         let mut heading = None;
         let mut stats = Stats::default();
 
-        for line in text.lines() {
-            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphanumeric()) {
+        for paragraph in self.paragrapher.paragraphs(text) {
+            if paragraph.is_empty() {
                 continue;
             }
 
             // Lines beginning with # are markdown headings
             // The other kind of heading is not permitted. Get over it.
-            if line.starts_with('#') {
+            if paragraph.first().starts_with('#') {
                 match heading.take() {
-                    None => heading = Some(heading_name(line)),
+                    None => heading = Some(heading_name(&paragraph.to_string())),
                     Some(last_heading) => {
-                        self.push(last_heading, stats);
-                        heading = Some(heading_name(line));
+                        self.stats.push(TaggedStats::new(last_heading, stats));
+                        heading = Some(heading_name(&paragraph.to_string()));
                         stats = Stats::default();
                     }
                 }
             } else {
-                stats.push(self.word_count(line));
+                stats.push(self.word_count(paragraph.pieces()));
             }
         }
 
-        self.push(
+        self.stats.push(TaggedStats::new(
             heading.as_ref().map(AsRef::as_ref).unwrap_or(filename),
             stats,
-        );
+        ))
     }
 
-    fn word_count(&self, s: &str) -> u32 {
+    fn word_count(&self, s: &[&str]) -> u32 {
         // Words are usually separated by spaces, but they
         // could be separated by m-dashes instead. We do not
         // count hyphenated words as two words.
@@ -93,14 +96,12 @@ impl Collector {
         // The filter has been added in order to prevent
         // quotes, followed by emdashes, being counted as
         // words.
-        s.split_whitespace()
+        s.iter()
+            .map(|&part| part.split_whitespace())
+            .flatten()
             .flat_map(|s| s.split("---"))
             .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
             .count() as u32
-    }
-
-    pub fn push(&mut self, heading: impl Into<String>, stats: Stats) {
-        self.stats.push(TaggedStats::new(heading, stats));
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {
@@ -111,7 +112,7 @@ impl Collector {
             Err(_) => {
                 let filter = filter.to_ascii_lowercase();
                 self.stats
-                    .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))        
+                    .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))
             }
         }
     }

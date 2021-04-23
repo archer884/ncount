@@ -1,5 +1,6 @@
 use std::{fs, io, path::Path};
 
+mod heading;
 mod stats;
 
 use prettytable::{
@@ -10,6 +11,8 @@ use prettytable::{
 use regex::bytes::RegexBuilder;
 use stats::Stats;
 
+use self::heading::Heading;
+
 #[derive(Debug)]
 pub struct Collector {
     stats: Vec<TaggedStats>,
@@ -17,20 +20,17 @@ pub struct Collector {
 
 #[derive(Debug)]
 pub struct TaggedStats {
-    tag: String,
+    tag: Heading,
     stats: Stats,
 }
 
 impl TaggedStats {
-    fn new(tag: impl Into<String>, stats: Stats) -> Self {
-        Self {
-            tag: tag.into(),
-            stats,
-        }
+    fn new(tag: Heading, stats: Stats) -> Self {
+        Self { tag, stats }
     }
 
     fn tag(&self) -> &str {
-        &self.tag
+        &self.tag.text
     }
 }
 
@@ -63,10 +63,10 @@ impl Collector {
             // The other kind of heading is not permitted. Get over it.
             if line.starts_with('#') {
                 match heading.take() {
-                    None => heading = Some(heading_name(line)),
+                    None => heading = Some(Heading::from_str(line)),
                     Some(last_heading) => {
                         self.stats.push(TaggedStats::new(last_heading, stats));
-                        heading = Some(heading_name(line));
+                        heading = Some(Heading::from_str(line));
                         stats = Stats::default();
                     }
                 }
@@ -76,7 +76,10 @@ impl Collector {
         }
 
         self.stats.push(TaggedStats::new(
-            heading.as_ref().map(AsRef::as_ref).unwrap_or(filename),
+            heading.take().unwrap_or_else(|| Heading {
+                level: 1,
+                text: filename.to_string(),
+            }),
             stats,
         ))
     }
@@ -150,15 +153,6 @@ fn filter_comments(text: &str) -> String {
     }
 
     result
-}
-
-/// Extract the heading name from a heading line
-///
-/// This function is also meant to remove formatting so that the heading can
-/// be displayed without things like asterisks, etc.
-fn heading_name(s: &str) -> String {
-    s.trim_start_matches(|u: char| u == '#' || u.is_whitespace())
-        .replace(|u: char| u == '*' || u == '_', "")
 }
 
 fn add_format(table: &mut Table) {

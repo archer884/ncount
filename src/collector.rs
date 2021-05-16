@@ -1,4 +1,4 @@
-use std::{fs, io, path::Path};
+use std::{collections::VecDeque, fs, io, path::Path};
 
 mod heading;
 mod stats;
@@ -8,35 +8,33 @@ use prettytable::{
     Cell, Table,
 };
 
-use regex::bytes::RegexBuilder;
+use heading::Heading;
+use regex::bytes::{Regex, RegexBuilder};
 use stats::Stats;
 
-use self::heading::Heading;
-
 #[derive(Debug)]
-pub struct Collector {
-    stats: Vec<TaggedStats>,
-}
-
-#[derive(Debug)]
-pub struct TaggedStats {
-    tag: Heading,
+pub struct DocumentStats {
+    level: u8,
+    heading: String,
     stats: Stats,
+    children: Vec<DocumentStats>,
 }
 
-impl TaggedStats {
-    fn new(tag: Heading, stats: Stats) -> Self {
-        Self { tag, stats }
+impl DocumentStats {
+    pub fn new() -> Self {
+        Self {
+            level: 0,
+            heading: String::new(),
+            stats: Stats::default(),
+            children: Vec::new(),
+        }
     }
 
-    fn tag(&self) -> &str {
-        &self.tag.text
-    }
-}
-
-impl Collector {
-    pub fn new() -> Collector {
-        Collector { stats: Vec::new() }
+    fn with_level(level: u8) -> Self {
+        Self {
+            level,
+            ..Self::new()
+        }
     }
 
     pub fn apply_path(&mut self, path: &Path) -> crate::Result<()> {
@@ -63,56 +61,69 @@ impl Collector {
             // The other kind of heading is not permitted. Get over it.
             if line.starts_with('#') {
                 match heading.take() {
-                    None => heading = Some(Heading::from_str(line)),
                     Some(last_heading) => {
-                        self.stats.push(TaggedStats::new(last_heading, stats));
+                        self.append_stats(last_heading, stats);
                         heading = Some(Heading::from_str(line));
                         stats = Stats::default();
                     }
+                    None => heading = Some(Heading::from_str(line)),
                 }
             } else {
-                stats.push(self.word_count(line));
+                stats.push(word_count(line));
             }
         }
 
-        self.stats.push(TaggedStats::new(
-            heading.take().unwrap_or_else(|| Heading {
-                level: 1,
-                text: filename.to_string(),
-            }),
-            stats,
-        ))
-    }
-
-    fn word_count(&self, s: &str) -> u32 {
-        // Words are usually separated by spaces, but they
-        // could be separated by m-dashes instead. We do not
-        // count hyphenated words as two words.
-        //
-        // The filter has been added in order to prevent
-        // quotes, followed by emdashes, being counted as
-        // words.
-        s.split_whitespace()
-            .flat_map(|s| s.split("---"))
-            .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
-            .count() as u32
+        let heading = heading.take().unwrap_or_else(|| Heading {
+            level: self.level + 1,
+            text: filename.to_string(),
+        });
+        self.last_child().append_stats(heading, stats);
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {
-        match RegexBuilder::new(filter).case_insensitive(true).build() {
-            Ok(filter) => {
-                self.stats.retain(|x| filter.is_match(x.tag().as_bytes()));
-            }
-            Err(_) => {
-                let filter = filter.to_ascii_lowercase();
-                self.stats
-                    .retain(|x| x.tag().to_ascii_lowercase().contains(&filter))
-            }
+        let filter = HeadingFilter::new(filter);
+        self.filter_self(&filter);
+    }
+
+    fn filter_self(&mut self, filter: &HeadingFilter) -> bool {
+        if filter.is_match(&self.heading) {
+            true
+        } else {
+            // Gather indices of any matching children.
+            let mut indices: VecDeque<_> = self
+                .children
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(idx, child)| child.filter_self(filter).then(|| idx))
+                .collect();
+
+            // Retain only matching children.
+            let mut idx = 0;
+            self.children.retain(|_child| {
+                let is_retained_idx = indices.front().map(|&fidx| fidx == idx).unwrap_or_default();
+                idx += 1;
+
+                if is_retained_idx {
+                    indices.pop_front();
+                }
+                is_retained_idx
+            });
+
+            // Because this level is retained only as a parent heading for
+            // a valid subheading, text at this level is no longer counted
+            // for statistical purposes.
+            self.stats = Stats::default();
+            !self.children.is_empty()
         }
     }
 
     pub fn overall_stats(&self) -> Stats {
-        self.stats.iter().map(|x| &x.stats).collect()
+        self.stats
+            + self
+                .children
+                .iter()
+                .map(|child| child.overall_stats())
+                .collect()
     }
 
     pub fn as_table(&self, detail: bool) -> Table {
@@ -120,7 +131,11 @@ impl Collector {
 
         add_format(&mut table);
         add_header(&mut table, detail);
-        add_rows(&mut table, &self.stats, detail);
+        self.visit_rows(&mut VisitRowsContext {
+            table: &mut table,
+            count: 0,
+            detail,
+        });
 
         // Nothing the footer prints makes sense if we're only printing the word count.
         if detail {
@@ -129,6 +144,75 @@ impl Collector {
 
         table
     }
+
+    fn append_stats(&mut self, heading: Heading, stats: Stats) {
+        if heading.level > self.level + 1 {
+            self.last_child().append_stats(heading, stats);
+        } else {
+            let mut document = DocumentStats::with_level(heading.level);
+            document.heading = heading.text;
+            document.stats = stats;
+            self.children.push(document);
+        }
+    }
+
+    fn last_child(&mut self) -> &mut Self {
+        if self.children.is_empty() {
+            self.children
+                .push(DocumentStats::with_level(self.level + 1));
+        }
+
+        self.children.last_mut().unwrap()
+    }
+
+    fn visit_rows(&self, context: &mut VisitRowsContext) {
+        add_row(context, &self.heading, self.level, &self.stats);
+        self.children
+            .iter()
+            .for_each(|child| child.visit_rows(context));
+    }
+}
+
+struct VisitRowsContext<'a> {
+    table: &'a mut Table,
+    count: u32,
+    detail: bool,
+}
+
+enum HeadingFilter {
+    Regex(Regex),
+    Text(String),
+}
+
+impl HeadingFilter {
+    fn new(filter: &str) -> Self {
+        RegexBuilder::new(filter)
+            .case_insensitive(true)
+            .build()
+            .map(HeadingFilter::Regex)
+            .unwrap_or_else(|_| HeadingFilter::Text(filter.to_ascii_lowercase()))
+    }
+
+    fn is_match(&self, heading: &str) -> bool {
+        match self {
+            HeadingFilter::Regex(regex) => regex.is_match(heading.as_bytes()),
+            HeadingFilter::Text(text) => heading.to_ascii_lowercase().contains(text),
+        }
+    }
+}
+
+fn word_count(text: &str) -> u32 {
+    // Words are usually separated by spaces, but they
+    // could be separated by m-dashes instead. We do not
+    // count hyphenated words as two words.
+    //
+    // The filter has been added in order to prevent
+    // quotes, followed by emdashes, being counted as
+    // words.
+    text.split_whitespace()
+        .flat_map(|s| s.split("---"))
+        .filter(|&s| s.bytes().any(|u| u.is_ascii_alphanumeric()))
+        .count() as u32
 }
 
 fn filter_comments(text: &str) -> String {
@@ -176,41 +260,39 @@ fn add_header(table: &mut Table, detail: bool) {
     row.add_cell(build_cell("Total", Alignment::RIGHT));
 }
 
-fn add_rows<'a>(
-    table: &mut Table,
-    data: impl IntoIterator<Item = &'a TaggedStats> + 'a,
-    detail: bool,
-) {
-    let mut running_count = 0;
-    for item in data {
-        let stats = &item.stats;
-        running_count += stats.word_count;
-
-        let row = table.add_empty_row();
-        row.add_cell(build_cell(item.tag(), Alignment::LEFT));
-
-        if stats.is_empty() {
-            continue;
-        }
-
-        if detail {
-            row.add_cell(build_cell(
-                stats.paragraph_count.to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(build_cell(
-                stats.average_paragraph().to_string(),
-                Alignment::RIGHT,
-            ));
-            row.add_cell(build_cell(
-                stats.longest_paragraph.to_string(),
-                Alignment::RIGHT,
-            ));
-        }
-
-        row.add_cell(build_cell(stats.word_count.to_string(), Alignment::RIGHT));
-        row.add_cell(build_cell(running_count.to_string(), Alignment::RIGHT));
+// FIXME: this interim implementation of add_row mimics the behavior of the old
+// add_rows implementation. It has no understanding of nesting, etc.
+fn add_row<'a>(context: &'a mut VisitRowsContext, heading: &'a str, _level: u8, stats: &Stats) {
+    if heading.is_empty() && stats.is_empty() {
+        return;
     }
+
+    let row = context.table.add_empty_row();
+    row.add_cell(build_cell(heading, Alignment::LEFT));
+
+    if stats.is_empty() {
+        return;
+    }
+
+    context.count += stats.word_count;
+
+    if context.detail {
+        row.add_cell(build_cell(
+            stats.paragraph_count.to_string(),
+            Alignment::RIGHT,
+        ));
+        row.add_cell(build_cell(
+            stats.average_paragraph().to_string(),
+            Alignment::RIGHT,
+        ));
+        row.add_cell(build_cell(
+            stats.longest_paragraph.to_string(),
+            Alignment::RIGHT,
+        ));
+    }
+
+    row.add_cell(build_cell(stats.word_count.to_string(), Alignment::RIGHT));
+    row.add_cell(build_cell(context.count.to_string(), Alignment::RIGHT));
 }
 
 fn add_footer(table: &mut Table, stats: Stats) {
@@ -240,39 +322,55 @@ fn build_cell(content: impl AsRef<str>, alignment: Alignment) -> Cell {
 
 #[cfg(test)]
 mod tests {
-    use super::{Collector, Stats};
+    use super::{DocumentStats, Stats};
 
     static TEXT: &str = include_str!("../resources/sample.md");
 
     #[test]
     fn stats_are_correct() {
-        let mut collector = Collector::new();
-        collector.apply_str("Foo", TEXT);
+        let mut document = DocumentStats::new();
+        document.apply_str("Foo", TEXT);
 
         let Stats {
             paragraph_count,
             word_count,
             ..
-        } = collector.overall_stats();
+        } = document.overall_stats();
 
-        assert_eq!(321, word_count, "{:?}", collector.overall_stats());
-        assert_eq!(9, paragraph_count, "{:?}", collector.overall_stats());
+        assert_eq!(321, word_count, "{:?}", document.overall_stats());
+        assert_eq!(9, paragraph_count, "{:?}", document.overall_stats());
     }
 
     #[test]
     fn count_handles_quotes_and_dashes() {
         let text = "---what?!";
-        let mut collector = Collector::new();
+        let mut document = DocumentStats::new();
 
-        collector.apply_str("Foo", text);
+        document.apply_str("Foo", text);
 
         let Stats {
             paragraph_count,
             word_count,
             ..
-        } = collector.overall_stats();
+        } = document.overall_stats();
 
         assert_eq!(1, paragraph_count);
         assert_eq!(1, word_count);
+    }
+
+    #[test]
+    fn count_is_filtered_correctly() {
+        let mut document = DocumentStats::new();
+        document.apply_str("Foo", TEXT);
+        document.filter_by_heading("Other title");
+        let Stats {
+            word_count,
+            paragraph_count,
+            longest_paragraph,
+        } = document.overall_stats();
+
+        assert_eq!(82, word_count);
+        assert_eq!(4, paragraph_count);
+        assert_eq!(41, longest_paragraph);
     }
 }

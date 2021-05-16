@@ -1,6 +1,11 @@
-use std::{borrow::Borrow, cmp, iter::FromIterator};
+use std::{
+    borrow::Borrow,
+    cmp,
+    iter::FromIterator,
+    ops::{Add, AddAssign},
+};
 
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
     pub word_count: u32,
     pub paragraph_count: u32,
@@ -36,5 +41,39 @@ impl<T: Borrow<Stats>> FromIterator<T> for Stats {
             stats.longest_paragraph = cmp::max(stats.longest_paragraph, current.longest_paragraph);
         }
         stats
+    }
+}
+
+impl Add for Stats {
+    type Output = Self;
+
+    fn add(
+        self,
+        Stats {
+            word_count,
+            paragraph_count,
+            longest_paragraph,
+        }: Self,
+    ) -> Self::Output {
+        Stats {
+            word_count: self.word_count + word_count,
+            paragraph_count: self.paragraph_count + paragraph_count,
+            longest_paragraph: self.longest_paragraph.max(longest_paragraph),
+        }
+    }
+}
+
+impl AddAssign for Stats {
+    fn add_assign(
+        &mut self,
+        Stats {
+            word_count,
+            paragraph_count,
+            longest_paragraph,
+        }: Self,
+    ) {
+        self.word_count += word_count;
+        self.paragraph_count += paragraph_count;
+        self.longest_paragraph = self.longest_paragraph.max(longest_paragraph);
     }
 }

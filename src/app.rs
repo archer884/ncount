@@ -1,30 +1,30 @@
 use std::path::PathBuf;
 
-use crate::{collector::Collector, opt::Opts};
+use crate::{collector::DocumentStats, opt::Opts};
 
 pub struct Application {
     options: Opts,
-    collector: Collector,
+    document: DocumentStats,
 }
 
 impl Application {
     pub fn new(options: Opts) -> Self {
         Application {
-            collector: Collector::new(),
+            document: DocumentStats::new(),
             options,
         }
     }
 
     pub fn run(&mut self) -> crate::Result<()> {
         for path in read_paths(self.options.paths()) {
-            self.collector.apply_path(&path)?;
+            self.document.apply_path(&path)?;
         }
 
         if let Some(filter) = self.options.filter_by_heading() {
-            self.collector.filter_by_heading(filter);
+            self.document.filter_by_heading(filter);
         }
 
-        println!("{}", self.collector.as_table(self.options.detail()));
+        println!("{}", self.document.as_table(self.options.detail()));
         Ok(())
     }
 }

@@ -179,6 +179,10 @@ impl Default for DocumentStats {
     }
 }
 
+struct DocumentStatsIter<'a> {
+    
+}
+
 struct VisitRowsContext<'a> {
     table: &'a mut Table,
     count: u32,

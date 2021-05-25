@@ -1,4 +1,5 @@
 mod app;
+mod format;
 mod opt;
 
 use app::Application;

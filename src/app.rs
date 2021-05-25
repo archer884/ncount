@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use ncount::DocumentStats;
-use crate::Opts;
+
+use crate::{Opts, format::ChapterFormatter};
 
 pub struct Application {
     options: Opts,
@@ -26,6 +27,8 @@ impl Application {
         }
 
         println!("{}", self.document.as_table(self.options.detail()));
+        println!("==========\n{}", ChapterFormatter::new(&self.document));
+
         Ok(())
     }
 }

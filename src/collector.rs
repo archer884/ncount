@@ -173,6 +173,12 @@ impl DocumentStats {
     }
 }
 
+impl Default for DocumentStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct VisitRowsContext<'a> {
     table: &'a mut Table,
     count: u32,

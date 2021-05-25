@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use crate::{collector::DocumentStats, opt::Opts};
+use ncount::DocumentStats;
+use crate::Opts;
 
 pub struct Application {
     options: Opts,
@@ -15,7 +16,7 @@ impl Application {
         }
     }
 
-    pub fn run(&mut self) -> crate::Result<()> {
+    pub fn run(&mut self) -> ncount::Result<()> {
         for path in read_paths(self.options.paths()) {
             self.document.apply_path(&path)?;
         }

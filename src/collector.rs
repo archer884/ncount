@@ -77,7 +77,7 @@ impl DocumentStats {
             level: self.level + 1,
             text: filename.to_string(),
         });
-        self.last_child().append_stats(heading, stats);
+        self.append_stats(heading, stats);
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {

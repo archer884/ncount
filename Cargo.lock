@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "ncount"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "criterion",
  "glob",

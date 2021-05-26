@@ -24,8 +24,6 @@ impl Application {
             self.document.filter_by_heading(filter);
         }
 
-        dbg!(&self.document);
-
         println!("{}", self.document.as_table(self.options.detail()));
         Ok(())
     }

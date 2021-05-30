@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fs, io, path::Path};
+use std::{fs, io, path::Path};
 
 mod heading;
 mod stats;
@@ -12,29 +12,20 @@ use heading::Heading;
 use regex::bytes::{Regex, RegexBuilder};
 use stats::Stats;
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct DocumentStats {
-    level: u8,
-    heading: String,
+    sections: Vec<Section>,
+}
+
+#[derive(Clone, Debug)]
+struct Section {
+    heading: Heading,
     stats: Stats,
-    children: Vec<DocumentStats>,
 }
 
 impl DocumentStats {
     pub fn new() -> Self {
-        Self {
-            level: 0,
-            heading: String::new(),
-            stats: Stats::default(),
-            children: Vec::new(),
-        }
-    }
-
-    fn with_level(level: u8) -> Self {
-        Self {
-            level,
-            ..Self::new()
-        }
+        Self::default()
     }
 
     pub fn apply_path(&mut self, path: &Path) -> crate::Result<()> {
@@ -62,7 +53,10 @@ impl DocumentStats {
             if line.starts_with('#') {
                 match heading.take() {
                     Some(last_heading) => {
-                        self.append_stats(last_heading, stats);
+                        self.sections.push(Section {
+                            heading: last_heading,
+                            stats,
+                        });
                         heading = Some(Heading::from_str(line));
                         stats = Stats::default();
                     }
@@ -74,56 +68,45 @@ impl DocumentStats {
         }
 
         let heading = heading.take().unwrap_or_else(|| Heading {
-            level: self.level + 1,
+            level: 0,
             text: filename.to_string(),
         });
-        self.append_stats(heading, stats);
+
+        self.sections.push(Section { heading, stats });
     }
 
     pub fn filter_by_heading(&mut self, filter: &str) {
+        // We need to know that a given heading either
+        // A) matches the filter provided or
+        // B) is a descendant of a matching heading.
+
         let filter = HeadingFilter::new(filter);
-        self.filter_self(&filter);
-    }
+        let mut level = None;
 
-    fn filter_self(&mut self, filter: &HeadingFilter) -> bool {
-        if filter.is_match(&self.heading) {
-            true
-        } else {
-            // Gather indices of any matching children.
-            let mut indices: VecDeque<_> = self
-                .children
-                .iter_mut()
-                .enumerate()
-                .filter_map(|(idx, child)| child.filter_self(filter).then(|| idx))
-                .collect();
+        self.sections.retain(|section| {
+            // If this section is a descendant of a retained heading, retain
+            // it also. If not, we will no longer consider subsequent
+            // headings to be descendants.
+            let is_descendant_heading = level
+                .map(|level| section.heading.level > level)
+                .unwrap_or_default();
+            if is_descendant_heading {
+                return true;
+            } else {
+                level = None;
+            }
 
-            // Retain only matching children.
-            let mut idx = 0;
-            self.children.retain(|_child| {
-                let is_retained_idx = indices.front().map(|&fidx| fidx == idx).unwrap_or_default();
-                idx += 1;
-
-                if is_retained_idx {
-                    indices.pop_front();
-                }
-                is_retained_idx
-            });
-
-            // Because this level is retained only as a parent heading for
-            // a valid subheading, text at this level is no longer counted
-            // for statistical purposes.
-            self.stats = Stats::default();
-            !self.children.is_empty()
-        }
+            if filter.is_match(&section.heading.text) {
+                level = Some(section.heading.level);
+                true
+            } else {
+                false
+            }
+        })
     }
 
     pub fn overall_stats(&self) -> Stats {
-        self.stats
-            + self
-                .children
-                .iter()
-                .map(|child| child.overall_stats())
-                .collect()
+        self.sections.iter().map(|section| &section.stats).collect()
     }
 
     pub fn as_table(&self, detail: bool) -> Table {
@@ -131,11 +114,14 @@ impl DocumentStats {
 
         add_format(&mut table);
         add_header(&mut table, detail);
-        self.visit_rows(&mut VisitRowsContext {
-            table: &mut table,
-            count: 0,
-            detail,
-        });
+        add_rows(
+            &self.sections,
+            &mut VisitRowsContext {
+                table: &mut table,
+                count: 0,
+                detail,
+            },
+        );
 
         // Nothing the footer prints makes sense if we're only printing the word count.
         if detail {
@@ -143,33 +129,6 @@ impl DocumentStats {
         }
 
         table
-    }
-
-    fn append_stats(&mut self, heading: Heading, stats: Stats) {
-        if heading.level > self.level + 1 {
-            self.last_child().append_stats(heading, stats);
-        } else {
-            let mut document = DocumentStats::with_level(heading.level);
-            document.heading = heading.text;
-            document.stats = stats;
-            self.children.push(document);
-        }
-    }
-
-    fn last_child(&mut self) -> &mut Self {
-        if self.children.is_empty() {
-            self.children
-                .push(DocumentStats::with_level(self.level + 1));
-        }
-
-        self.children.last_mut().unwrap()
-    }
-
-    fn visit_rows(&self, context: &mut VisitRowsContext) {
-        add_row(context, &self.heading, self.level, &self.stats);
-        self.children
-            .iter()
-            .for_each(|child| child.visit_rows(context));
     }
 }
 
@@ -260,39 +219,38 @@ fn add_header(table: &mut Table, detail: bool) {
     row.add_cell(build_cell("Total", Alignment::RIGHT));
 }
 
-// FIXME: this interim implementation of add_row mimics the behavior of the old
-// add_rows implementation. It has no understanding of nesting, etc.
-fn add_row<'a>(context: &'a mut VisitRowsContext, heading: &'a str, _level: u8, stats: &Stats) {
-    if heading.is_empty() && stats.is_empty() {
-        return;
-    }
+fn add_rows(sections: &[Section], context: &mut VisitRowsContext) {
+    for section in sections {
+        let row = context.table.add_empty_row();
+        row.add_cell(build_cell(&section.heading.text, Alignment::LEFT));
 
-    let row = context.table.add_empty_row();
-    row.add_cell(build_cell(heading, Alignment::LEFT));
+        if section.stats.is_empty() {
+            continue;
+        }
 
-    if stats.is_empty() {
-        return;
-    }
+        context.count += section.stats.word_count;
 
-    context.count += stats.word_count;
+        if context.detail {
+            row.add_cell(build_cell(
+                section.stats.paragraph_count.to_string(),
+                Alignment::RIGHT,
+            ));
+            row.add_cell(build_cell(
+                section.stats.average_paragraph().to_string(),
+                Alignment::RIGHT,
+            ));
+            row.add_cell(build_cell(
+                section.stats.longest_paragraph.to_string(),
+                Alignment::RIGHT,
+            ));
+        }
 
-    if context.detail {
         row.add_cell(build_cell(
-            stats.paragraph_count.to_string(),
+            section.stats.word_count.to_string(),
             Alignment::RIGHT,
         ));
-        row.add_cell(build_cell(
-            stats.average_paragraph().to_string(),
-            Alignment::RIGHT,
-        ));
-        row.add_cell(build_cell(
-            stats.longest_paragraph.to_string(),
-            Alignment::RIGHT,
-        ));
+        row.add_cell(build_cell(context.count.to_string(), Alignment::RIGHT));
     }
-
-    row.add_cell(build_cell(stats.word_count.to_string(), Alignment::RIGHT));
-    row.add_cell(build_cell(context.count.to_string(), Alignment::RIGHT));
 }
 
 fn add_footer(table: &mut Table, stats: Stats) {

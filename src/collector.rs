@@ -44,7 +44,7 @@ impl DocumentStats {
         let mut stats = Stats::default();
 
         for line in text.lines() {
-            if line.is_empty() || !line.bytes().any(|u| u.is_ascii_alphanumeric()) {
+            if !is_content(line) {
                 continue;
             }
 
@@ -130,6 +130,14 @@ impl DocumentStats {
 
         table
     }
+}
+
+fn is_content(text: &str) -> bool {
+    text.bytes().any(|u| u.is_ascii_alphanumeric())
+        && !text
+            .get(0..2)
+            .map(|slice| slice == "[^")
+            .unwrap_or_default()
 }
 
 struct VisitRowsContext<'a> {
@@ -330,5 +338,19 @@ mod tests {
         assert_eq!(82, word_count);
         assert_eq!(4, paragraph_count);
         assert_eq!(41, longest_paragraph);
+    }
+
+    #[test]
+    fn footnotes_are_not_counted() {
+        // My mind clearly has a very negative bias for some reason.
+        let text = "Hello, world!\n\n\
+            How are you?[^note]\n\n\
+            [^note]: No one cares.";
+        
+        let mut document = DocumentStats::new();
+        document.apply_str("foo.txt", text);
+        let Stats { word_count, .. } = document.overall_stats();
+
+        assert_eq!(5, word_count);
     }
 }

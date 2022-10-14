@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
-use crate::{collector::DocumentStats, opt::Opts};
+use crate::{collector::DocumentStats, opt::Args};
 
 pub struct Application {
-    options: Opts,
+    options: Args,
     document: DocumentStats,
 }
 
 impl Application {
-    pub fn new(options: Opts) -> Self {
+    pub fn new(options: Args) -> Self {
         Application {
             document: DocumentStats::new(),
             options,
@@ -24,7 +24,7 @@ impl Application {
             self.document.filter_by_heading(filter);
         }
 
-        println!("{}", self.document.as_table(self.options.detail()));
+        println!("{}", self.document.as_table(self.options.verbose));
         Ok(())
     }
 }

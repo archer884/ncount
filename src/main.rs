@@ -4,18 +4,17 @@ mod error;
 mod opt;
 
 use app::Application;
-use opt::Opts;
+use opt::Args;
 
 type Result<T, E = error::Error> = std::result::Result<T, E>;
 
 fn main() {
-    let opts = Opts::from_args();
-    if let Err(e) = run(opts) {
+    if let Err(e) = run(Args::parse()) {
         eprintln!("{}", e);
         std::process::exit(1);
     }
 }
 
-fn run(opts: Opts) -> Result<()> {
+fn run(opts: Args) -> Result<()> {
     Application::new(opts).run()
 }

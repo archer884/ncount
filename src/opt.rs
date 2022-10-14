@@ -1,27 +1,23 @@
-use structopt::StructOpt;
+use clap::Parser;
 
 /// A word count program.
-#[derive(Debug, StructOpt)]
-pub struct Opts {
+#[derive(Debug, Parser)]
+pub struct Args {
     /// Paths (or globs) to be read
     paths: Vec<String>,
 
     /// Filter results by heading
-    #[structopt(short = "f", long = "filter")]
+    #[arg(short = 'f', long = "filter")]
     heading: Option<String>,
 
     /// Print detailed document information
-    #[structopt(short, long)]
-    detail: bool,
-
-    /// Print detailed document information (alias for detail)
-    #[structopt(short, long)]
-    verbose: bool,
+    #[arg(short, long)]
+    pub verbose: bool,
 }
 
-impl Opts {
-    pub fn from_args() -> Opts {
-        StructOpt::from_args()
+impl Args {
+    pub fn parse() -> Args {
+        Parser::parse()
     }
 
     pub fn paths(&self) -> impl Iterator<Item = &str> {
@@ -32,11 +28,7 @@ impl Opts {
     }
 
     pub fn filter_by_heading(&self) -> Option<&str> {
-        self.heading.as_ref().map(AsRef::as_ref)
-    }
-
-    pub fn detail(&self) -> bool {
-        self.detail || self.verbose
+        self.heading.as_deref()
     }
 }
 

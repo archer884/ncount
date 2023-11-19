@@ -1,5 +1,6 @@
 use std::{fs, io, path::Path};
 
+mod filter;
 mod heading;
 mod stats;
 
@@ -8,12 +9,14 @@ use prettytable::{
     Cell, Table,
 };
 
+use filter::TagFilter;
 use heading::Heading;
 use regex::bytes::{Regex, RegexBuilder};
 use stats::Stats;
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentStats {
+    tag_filter: TagFilter,
     sections: Vec<Section>,
 }
 
@@ -34,12 +37,12 @@ impl DocumentStats {
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Cannot apply directory path"))?
             .to_string_lossy();
 
-        self.apply_str(&*filename, &fs::read_to_string(path)?);
+        self.apply_str(&filename, &fs::read_to_string(path)?);
         Ok(())
     }
 
     pub fn apply_str(&mut self, filename: &str, text: &str) {
-        let text = filter_comments(text);
+        let text = self.tag_filter.filter(text);
         let mut heading = None;
         let mut stats = Stats::default();
 
@@ -182,30 +185,6 @@ fn word_count(text: &str) -> u32 {
         .count() as u32
 }
 
-fn filter_comments(text: &str) -> String {
-    let mut text = text;
-    let mut state = false;
-    let mut result = String::with_capacity(text.len());
-
-    while !text.is_empty() {
-        if !state {
-            if let Some(idx) = text.find("<!--") {
-                state = true;
-                result.push_str(&text[..idx]);
-                text = &text[idx..];
-            } else {
-                result.push_str(text);
-                return result;
-            }
-        } else if let Some(idx) = text.find("-->") {
-            state = false;
-            text = &text[(idx + 3)..];
-        }
-    }
-
-    result
-}
-
 fn add_format(table: &mut Table) {
     let mut format = TableFormat::new();
     format.borders(' ');
@@ -346,7 +325,7 @@ mod tests {
         let text = "Hello, world!\n\n\
             How are you?[^note]\n\n\
             [^note]: No one cares.";
-        
+
         let mut document = DocumentStats::new();
         document.apply_str("foo.txt", text);
         let Stats { word_count, .. } = document.overall_stats();

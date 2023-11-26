@@ -12,6 +12,9 @@ pub struct Args {
     /// file or directory paths
     paths: Vec<String>,
 
+    /// filter output by heading
+    filter: Option<String>,
+
     /// print extended information
     #[arg(short, long)]
     verbose: bool,
@@ -30,7 +33,7 @@ impl Args {
         files
     }
 
-    fn files<'a>(&'a self) -> impl Iterator<Item = PathBuf> + 'a {
+    fn files(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let sources = self.paths.iter().filter_map(|candidate| {
             if Path::new(candidate).exists() {
                 Some(Either::Left(candidate))

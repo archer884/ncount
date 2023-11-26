@@ -1,6 +1,6 @@
 [package]
 name = "ncount"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2021"
 authors = ["J/A <archer884@gmail.com>"]
 license = "Unlicense"
@@ -17,9 +17,11 @@ A word count tool intended to derive useful stats from markdown.
 clap = { version = "4.4.8", features = ["derive", "wrap_help"] }
 either = "1.9.0"
 globwalk = "0.8.1"
+regex = "1.10.2"
 thiserror = "1.0.50"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+unicode-segmentation = "1.10.1"
 
 [profile.release]
 lto = "thin"

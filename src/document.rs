@@ -61,6 +61,16 @@ impl DocumentBuilder {
         // generation of a new document instead. The question of how we keep track of which
         // document is the "current" document is... left as an exercise to the reader.
 
+        fn try_get_heading(s: &str) -> Option<(&str, i32)> {
+            if !s.starts_with('#') {
+                return None;
+            }
+
+            let level = s.bytes().take_while(|&u| u == b'#').count() as i32;
+            let heading = s.trim_start_matches('#').trim();
+            Some((heading, level))
+        }
+
         let mut target = self.root.current_document(self.current_level);
         for s in paragraphs {
             // If this line turns out to be a heading, we need to update our current level and
@@ -86,16 +96,6 @@ impl DocumentBuilder {
     }
 }
 
-fn try_get_heading(s: &str) -> Option<(&str, i32)> {
-    if !s.starts_with('#') {
-        return None;
-    }
-
-    let level = s.bytes().take_while(|&u| u == b'#').count() as i32;
-    let heading = s.trim_start_matches('#').trim();
-    Some((heading, level))
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct RootDocument {
     // The root document stores paragraphs only in the event
@@ -105,6 +105,16 @@ pub struct RootDocument {
 }
 
 impl RootDocument {
+    // FIXME: probably just delete this when you're done with it, right?
+    pub fn total_count(&self) -> i32 {
+        self.paragraphs.total
+            + self
+                .subdocuments
+                .iter()
+                .map(|x| x.total_count())
+                .sum::<i32>()
+    }
+
     fn last_document(&mut self) -> &mut dyn DocumentStats {
         if self.subdocuments.is_empty() {
             self.subdocuments.push(Document::new(1));
@@ -128,8 +138,8 @@ impl DocumentStats for RootDocument {
             1 => {
                 self.subdocuments.push(Document::new(1));
                 self.subdocuments.last_mut().unwrap()
-            },
-            _ => self.last_document().new_document(level)
+            }
+            _ => self.last_document().new_document(level),
         }
     }
 
@@ -158,6 +168,16 @@ impl Document {
             paragraphs: Paragraphs::new(),
             subdocuments: Vec::new(),
         }
+    }
+
+    // FIXME: probably just delete this when you're done with it, right?
+    pub fn total_count(&self) -> i32 {
+        self.paragraphs.total
+            + self
+                .subdocuments
+                .iter()
+                .map(|x| x.total_count())
+                .sum::<i32>()
     }
 
     fn last_document(&mut self) -> &mut dyn DocumentStats {

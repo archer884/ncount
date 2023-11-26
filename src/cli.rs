@@ -13,6 +13,7 @@ pub struct Args {
     paths: Vec<String>,
 
     /// filter output by heading
+    #[arg(short, long)]
     filter: Option<String>,
 
     /// print extended information
@@ -31,6 +32,10 @@ impl Args {
         let mut files: Vec<_> = self.files().collect();
         files.sort();
         files
+    }
+
+    pub fn filter(&self) -> Option<&str> {
+        self.filter.as_deref()
     }
 
     fn files(&self) -> impl Iterator<Item = PathBuf> + '_ {

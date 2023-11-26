@@ -2,6 +2,7 @@ mod cli;
 mod document;
 mod error;
 mod filter;
+mod fmt;
 mod log;
 
 use std::{fs, process};
@@ -9,6 +10,7 @@ use std::{fs, process};
 use cli::Args;
 use document::DocumentBuilder;
 use filter::TagFilter;
+use fmt::StatFmt;
 
 type Result<T, E = error::Error> = std::result::Result<T, E>;
 
@@ -31,9 +33,10 @@ fn run(args: Args) -> Result<()> {
         builder.apply(filter.filter_text(&text))
     }
 
-    let document = builder.finalize();
-
-    todo!("display freaking results");
+    args.filter()
+        .map(StatFmt::with_filter)
+        .unwrap_or_default()
+        .format(&builder.finalize())?;
 
     Ok(())
 }

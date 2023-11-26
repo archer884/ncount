@@ -1,24 +1,19 @@
 use regex::{Match, Regex};
 
-// FIXME: filter out [^foo] and [^foo]:...
-// The old word count program does this correctly, but I forgot these footnote things even exist.
-
-// Might be easiest to just rewrite the regex to match whole instances of these things and slice
-// them out that way. Like, instead of doing the advance by find(foo), do the advance by
-// match.end(). The only catch is that we'll need to find a pattern that works for both parts of
-// the footnotes.
-
-// Also, since I'm writing fixme plans: memoize this to disk just like with the notes program,
-// and convert both programs to use either bson or protobuffers or something like that.
-
 pub struct TextFilter {
     tag: Regex,
 }
 
 impl TextFilter {
     pub fn new() -> Self {
+        // Footnotes:
+        // ^\[\^[^\[]+\]:.+$|\[\^[^\[]+\]
+        // HTML comment:
+        // <!--(.|\n)+?-->
+        // Inline notes:
+        // <note.+?>
         Self {
-            tag: Regex::new("<note|<!--").unwrap(),
+            tag: Regex::new(r"<note.+?>|<!--(.|\n)+?-->|^\[\^[^\[]+\]:.+$|\[\^[^\[]+\]").unwrap(),
         }
     }
 
@@ -50,21 +45,12 @@ impl<'a> Iterator for FilteredText<'a> {
 
         if let Some(m) = self.filter.next_tag(self.text) {
             let result = self.text[..m.start()].trim();
-            self.text = advance_text(&self.text[m.start()..]);
+            self.text = self.text[m.end()..].trim();
             Some(result)
         } else {
             let result = self.text;
             self.text = "";
             Some(result)
         }
-    }
-}
-
-#[inline]
-fn advance_text(text: &str) -> &str {
-    if let Some(end) = text.find('>') {
-        text[end + 1..].trim()
-    } else {
-        ""
     }
 }

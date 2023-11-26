@@ -28,5 +28,6 @@ impl StatFmt {
 
 fn format_document(document: &Document) -> io::Result<()> {
     println!("{}", document.total_count());
+    println!("{document:#?}");
     Ok(())
 }

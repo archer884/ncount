@@ -1,10 +1,16 @@
 use regex::{Match, Regex};
 
-pub struct TagFilter {
+// FIXME: filter out [^foo] and [^foo]:...
+// The old word count program does this correctly, but I forgot these footnote things even exist.
+
+// Might be easiest to just rewrite the regex to match whole instances of these things and slice
+// them out that way.
+
+pub struct TextFilter {
     tag: Regex,
 }
 
-impl TagFilter {
+impl TextFilter {
     pub fn new() -> Self {
         Self {
             tag: Regex::new("<note|<!--").unwrap(),
@@ -25,7 +31,7 @@ impl TagFilter {
 }
 
 pub struct FilteredText<'a> {
-    filter: &'a TagFilter,
+    filter: &'a TextFilter,
     text: &'a str,
 }
 

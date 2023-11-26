@@ -9,7 +9,7 @@ use std::{fs, process};
 
 use cli::Args;
 use document::DocumentBuilder;
-use filter::TagFilter;
+use filter::TextFilter;
 use fmt::StatFmt;
 
 type Result<T, E = error::Error> = std::result::Result<T, E>;
@@ -24,7 +24,7 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<()> {
-    let filter = TagFilter::new();
+    let filter = TextFilter::new();
     let mut builder = DocumentBuilder::new();
 
     for file in args.materialize_files() {

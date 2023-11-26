@@ -4,7 +4,8 @@ use regex::{Match, Regex};
 // The old word count program does this correctly, but I forgot these footnote things even exist.
 
 // Might be easiest to just rewrite the regex to match whole instances of these things and slice
-// them out that way.
+// them out that way. Like, instead of doing the advance by find(foo), do the advance by
+// match.end(). 
 
 pub struct TextFilter {
     tag: Regex,

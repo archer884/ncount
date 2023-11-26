@@ -118,11 +118,10 @@ impl Document {
     }
 
     pub fn get_heading(&self, heading: &str) -> Option<&Document> {
-        let uheading = unicase::UniCase::new(heading);
         let document = self.subdocuments.iter().find(|&x| {
             x.heading
                 .as_ref()
-                .map(|x| unicase::UniCase::new(x) == uheading)
+                .map(|x| x.to_ascii_uppercase().starts_with(heading))
                 .unwrap_or_default()
         });
 
@@ -162,7 +161,7 @@ impl Document {
                 self.subdocuments.push(Document::new(level));
                 self.subdocuments.last_mut().unwrap()
             }
-            _ => self.last_document().new_document(level)
+            _ => self.last_document().new_document(level),
         }
     }
 

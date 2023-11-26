@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::document::RootDocument;
+use crate::document::Document;
 
 #[derive(Debug, Default)]
 pub struct StatFmt {
@@ -14,7 +14,19 @@ impl StatFmt {
         }
     }
 
-    pub fn format(&self, document: &RootDocument) -> io::Result<()> {
-        todo!()
+    pub fn format(&self, document: &Document) -> io::Result<()> {
+        let document = self.apply_filter(document).unwrap_or(document);
+        format_document(document)
     }
+
+    fn apply_filter<'a>(&self, document: &'a Document) -> Option<&'a Document> {
+        self.filter
+            .as_ref()
+            .and_then(|heading| document.get_heading(heading))
+    }
+}
+
+fn format_document(document: &Document) -> io::Result<()> {
+    println!("{}", document.total_count());
+    Ok(())
 }

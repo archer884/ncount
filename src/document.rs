@@ -1,27 +1,20 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-trait DocumentStats {
-    fn current_document(&mut self, level: i32) -> &mut dyn DocumentStats;
-    fn new_document(&mut self, level: i32) -> &mut dyn DocumentStats;
-    fn add_paragraph(&mut self, p: i32);
-    fn set_heading(&mut self, heading: &str);
-}
-
 #[derive(Clone, Debug)]
 pub struct DocumentBuilder {
-    root: RootDocument,
+    root: Document,
     current_level: i32,
 }
 
 impl DocumentBuilder {
     pub fn new() -> Self {
         Self {
-            root: Default::default(),
+            root: Document::new(0),
             current_level: 0,
         }
     }
 
-    pub fn finalize(self) -> RootDocument {
+    pub fn finalize(self) -> Document {
         self.root
     }
 
@@ -96,62 +89,6 @@ impl DocumentBuilder {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct RootDocument {
-    // The root document stores paragraphs only in the event
-    // that any bare text appears in the corpus.
-    paragraphs: Paragraphs,
-    subdocuments: Vec<Document>,
-}
-
-impl RootDocument {
-    // FIXME: probably just delete this when you're done with it, right?
-    pub fn total_count(&self) -> i32 {
-        self.paragraphs.total
-            + self
-                .subdocuments
-                .iter()
-                .map(|x| x.total_count())
-                .sum::<i32>()
-    }
-
-    fn last_document(&mut self) -> &mut dyn DocumentStats {
-        if self.subdocuments.is_empty() {
-            self.subdocuments.push(Document::new(1));
-        }
-        self.subdocuments.last_mut().unwrap()
-    }
-}
-
-impl DocumentStats for RootDocument {
-    fn current_document(&mut self, level: i32) -> &mut dyn DocumentStats {
-        match level {
-            0 => self,
-            1 => self.last_document(),
-            _ => self.last_document().current_document(level),
-        }
-    }
-
-    fn new_document(&mut self, level: i32) -> &mut dyn DocumentStats {
-        match level {
-            0 => self,
-            1 => {
-                self.subdocuments.push(Document::new(1));
-                self.subdocuments.last_mut().unwrap()
-            }
-            _ => self.last_document().new_document(level),
-        }
-    }
-
-    fn add_paragraph(&mut self, p: i32) {
-        self.paragraphs.add(p);
-    }
-
-    fn set_heading(&mut self, _heading: &str) {
-        unreachable!("...please");
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Document {
     heading: Option<String>,
@@ -180,42 +117,52 @@ impl Document {
                 .sum::<i32>()
     }
 
-    fn last_document(&mut self) -> &mut dyn DocumentStats {
+    pub fn get_heading(&self, heading: &str) -> Option<&Document> {
+        let uheading = unicase::UniCase::new(heading);
+        let document = self.subdocuments.iter().find(|&x| {
+            x.heading
+                .as_ref()
+                .map(|x| unicase::UniCase::new(x) == uheading)
+                .unwrap_or_default()
+        });
+
+        let mut fallback = self
+            .subdocuments
+            .iter()
+            .filter_map(|x| x.get_heading(heading));
+        document.or_else(|| fallback.next())
+    }
+}
+
+impl Document {
+    fn current_document(&mut self, level: i32) -> &mut Document {
+        let delta = level - self.level;
+        debug_assert!(delta >= 0, "impossible level requested");
+        match delta {
+            0 => self,
+            1 => self.last_document(),
+            _ => self.last_document().current_document(level),
+        }
+    }
+
+    fn last_document(&mut self) -> &mut Document {
         if self.subdocuments.is_empty() {
             self.subdocuments.push(Document::new(self.level + 1));
         }
         self.subdocuments.last_mut().unwrap()
     }
-}
 
-impl DocumentStats for Document {
-    fn current_document(&mut self, level: i32) -> &mut dyn DocumentStats {
-        // We only need to manage the case where the level given is greater than our own level,
-        // otherwise we would have already generated a new subdocument at a higher level of
-        // recursion.
-
-        debug_assert_ne!(self.level, level, "impossible level requested");
-
-        // If the level is one greater than our own, we need to generate a new document and return
-        // a reference to it. Otherwise, we recurse from the last document in our collection.
-
-        if self.level + 1 == level {
-            self.last_document()
-        } else {
-            self.last_document().current_document(level)
-        }
-    }
-
-    fn new_document(&mut self, level: i32) -> &mut dyn DocumentStats {
-        // Again...
-
-        debug_assert_ne!(self.level, level, "impossible level requested");
-
-        if self.level + 1 == level {
-            self.subdocuments.push(Document::new(level));
-            self.subdocuments.last_mut().unwrap()
-        } else {
-            self.last_document().new_document(level)
+    fn new_document(&mut self, level: i32) -> &mut Document {
+        let delta = level - self.level;
+        debug_assert!(delta > 0, "impossible level requested");
+        match delta {
+            // Can this ever happen? ...Not with that debugassert in place, but...
+            0 => self,
+            1 => {
+                self.subdocuments.push(Document::new(level));
+                self.subdocuments.last_mut().unwrap()
+            }
+            _ => self.last_document().new_document(level)
         }
     }
 

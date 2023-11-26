@@ -21,7 +21,9 @@ regex = "1.10.2"
 thiserror = "1.0.50"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+unicase = "2.7.0"
 unicode-segmentation = "1.10.1"
 
 [profile.release]
 lto = "thin"
+# debug = true # used for flamegraph generation

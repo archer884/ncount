@@ -5,7 +5,11 @@ use regex::{Match, Regex};
 
 // Might be easiest to just rewrite the regex to match whole instances of these things and slice
 // them out that way. Like, instead of doing the advance by find(foo), do the advance by
-// match.end(). 
+// match.end(). The only catch is that we'll need to find a pattern that works for both parts of
+// the footnotes.
+
+// Also, since I'm writing fixme plans: memoize this to disk just like with the notes program,
+// and convert both programs to use either bson or protobuffers or something like that.
 
 pub struct TextFilter {
     tag: Regex,

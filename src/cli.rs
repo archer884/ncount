@@ -8,6 +8,7 @@ use either::Either;
 use globwalk::GlobWalker;
 
 #[derive(Debug, Parser)]
+#[command(author, version)]
 pub struct Args {
     /// file or directory paths
     paths: Vec<String>,

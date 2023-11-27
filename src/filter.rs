@@ -30,6 +30,11 @@ impl TextFilter {
     }
 }
 
+
+// FIXME: I think this kind of iterative solution will only work insofar as we never split a
+// paragraph, which is just not tenable. We're bound to split one eventually, and in fact I'm sure
+// footnotes cause exactly that to happen. We should just go back to the regex.replace strategy.
+
 pub struct FilteredText<'a> {
     filter: &'a TextFilter,
     text: &'a str,

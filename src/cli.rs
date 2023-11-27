@@ -38,6 +38,10 @@ impl Args {
         self.filter.as_deref()
     }
 
+    pub fn verbose(&self) -> bool {
+        self.verbose
+    }
+
     fn files(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let sources = self.paths.iter().filter_map(|candidate| {
             if Path::new(candidate).exists() {

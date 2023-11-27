@@ -33,10 +33,11 @@ fn run(args: Args) -> Result<()> {
         builder.apply(filter.filter_text(&text))
     }
 
-    args.filter()
-        .map(StatFmt::with_filter)
-        .unwrap_or_default()
-        .format(&builder.finalize())?;
+    let mut formatter = StatFmt::new(args.verbose());
+    if let Some(filter) = args.filter() {
+        formatter.add_filter(filter);
+    }
 
+    formatter.format(&builder.finalize())?;
     Ok(())
 }

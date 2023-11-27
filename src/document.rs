@@ -1,3 +1,5 @@
+use std::{iter, ops};
+
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug)]
@@ -84,7 +86,7 @@ impl DocumentBuilder {
             }
 
             // Now that we have a target, we just need to apply the actual text.
-            target.add_paragraph(s.unicode_words().count() as i32);
+            target.add_paragraph(s.unicode_words().count() as u32);
         }
     }
 }
@@ -105,16 +107,6 @@ impl Document {
             paragraphs: Paragraphs::new(),
             subdocuments: Vec::new(),
         }
-    }
-
-    // FIXME: probably just delete this when you're done with it, right?
-    pub fn total_count(&self) -> i32 {
-        self.paragraphs.total
-            + self
-                .subdocuments
-                .iter()
-                .map(|x| x.total_count())
-                .sum::<i32>()
     }
 
     pub fn get_heading(&self, heading: &str) -> Option<&Document> {
@@ -165,41 +157,109 @@ impl Document {
         }
     }
 
-    fn add_paragraph(&mut self, p: i32) {
+    fn add_paragraph(&mut self, p: u32) {
         self.paragraphs.add(p);
     }
 
     fn set_heading(&mut self, heading: &str) {
         self.heading = Some(heading.into());
     }
+
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = DocumentStats> + 'a> {
+        let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
+        if self.heading.is_some() {
+            Box::new(iter::once(DocumentStats(self)).chain(subdocs))
+        } else {
+            Box::new(subdocs)
+        }
+    }
+}
+
+pub struct DocumentStats<'a>(&'a Document);
+
+impl DocumentStats<'_> {
+    pub fn heading(&self) -> Option<&str> {
+        self.0.heading.as_deref()
+    }
+
+    // Not sure what to do with this at the moment.
+    // pub fn level(&self) -> i32 {
+    //     self.0.level
+    // }
+
+    pub fn paragraphs(&self) -> Paragraphs {
+        self.0.paragraphs
+    }
 }
 
 /// A summary of the paragraphs of a document section
-#[derive(Clone, Debug, Default)]
-struct Paragraphs {
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Paragraphs {
     /// count of the paragraphs in the section
-    count: usize,
+    pub count: u32,
     /// length of the longest paragraph
-    max: i32,
+    pub max: u32,
     /// length of the shortest paragraph
-    min: i32,
+    pub min: u32,
     /// total length of all paragraphs
-    total: i32,
+    pub total: u32,
 }
 
 impl Paragraphs {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Default::default()
     }
 
-    pub fn add(&mut self, p: i32) {
+    fn add(&mut self, p: u32) {
         self.count += 1;
         self.max = self.max.max(p);
         self.min = self.min.min(p);
         self.total += p;
     }
 
-    pub fn average_len(&self) -> i32 {
-        (self.total as f64 / self.count as f64).round() as i32
+    pub fn is_zero(&self) -> bool {
+        self.count == 0
+    }
+
+    pub fn average_len(&self) -> u32 {
+        (self.total as f64 / self.count as f64).round() as u32
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct OverallStats {
+    /// count of all paragraphs
+    pub count: u32,
+    /// length of the longest paragraph
+    pub max: u32,
+    /// length of the shortest paragraph
+    pub min: u32,
+    /// total length of all paragraphs
+    pub total: u32,
+}
+
+impl OverallStats {
+    pub fn average_len(&self) -> u32 {
+        (self.total as f64 / self.count as f64).round() as u32
+    }
+}
+
+impl<'a> ops::AddAssign<DocumentStats<'a>> for OverallStats {
+    fn add_assign(&mut self, rhs: DocumentStats<'a>) {
+        let p = rhs.paragraphs();
+        self.count += p.count;
+        self.max = self.max.max(p.max);
+        self.min = self.min.min(p.min);
+        self.total += p.total;
+    }
+}
+
+impl<'a> FromIterator<DocumentStats<'a>> for OverallStats {
+    fn from_iter<T: IntoIterator<Item = DocumentStats<'a>>>(iter: T) -> Self {
+        let mut stats = OverallStats::default();
+        for p in iter {
+            stats += p;
+        }
+        stats
     }
 }

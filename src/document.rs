@@ -20,27 +20,12 @@ impl DocumentBuilder {
         self.root
     }
 
-    pub fn apply<S>(&mut self, segments: S)
-    where
-        S: IntoIterator,
-        S::Item: AsRef<str>,
-    {
+    pub fn apply(&mut self, s: impl AsRef<str>) {
         // It is the responsibility of the document builder to count the number of words in a
         // string. However, it is my intention to provide the document builder only strings which
         // have been cleaned with regard to comments and notes.
 
-        // A given document is made up of segments--which is to say, the whole document with
-        // elements like comments and other HTML tags removed. We will replace some tags with text
-        // literals, e.g. <br> with \n. Again, however, this is a job for the person providing
-        // segments to the document builder--NOT for the document builder itself.
-
-        for segment in segments {
-            self.apply_segment(segment.as_ref());
-        }
-    }
-
-    fn apply_segment(&mut self, s: &str) {
-        let paragraphs = s.lines().filter_map(|line| {
+        let paragraphs = s.as_ref().lines().filter_map(|line| {
             let line = line.trim();
             if !line.is_empty() {
                 Some(line)
@@ -182,10 +167,9 @@ impl DocumentStats<'_> {
         self.0.heading.as_deref()
     }
 
-    // Not sure what to do with this at the moment.
-    // pub fn level(&self) -> i32 {
-    //     self.0.level
-    // }
+    pub fn level(&self) -> i32 {
+        self.0.level
+    }
 
     pub fn paragraphs(&self) -> Paragraphs {
         self.0.paragraphs

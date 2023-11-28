@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::{io::{self, Write}, iter, borrow::Cow};
 
 use prettytable::{
     format::{Alignment, TableFormat},
@@ -58,7 +58,14 @@ impl StatFmt {
         let row = table.add_empty_row();
 
         if let Some(heading) = stats.heading() {
-            row.add_cell(Cell::new_align(heading, Alignment::LEFT).style_spec("b"));
+            let heading = match stats.level() {
+                0 | 1 => Cow::from(heading),
+                2 => Cow::from(format!(" {heading}")),
+                3 => Cow::from(format!("  {heading}")),
+                4 => Cow::from(format!("   {heading}")),
+                _ => Cow::from(format!("    {heading}")),
+            };
+            row.add_cell(Cell::new_align(&*heading, Alignment::LEFT).style_spec("b"));
         } else {
             return;
         }

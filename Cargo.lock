@@ -309,6 +309,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsw"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "610cd929d24f634af855498b575263c44d541a0e28c21d595968a6e25fe190f9"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -342,6 +348,7 @@ dependencies = [
  "clap",
  "either",
  "globwalk",
+ "libsw",
  "prettytable-rs",
  "regex",
  "thiserror",

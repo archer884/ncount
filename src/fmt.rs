@@ -1,4 +1,4 @@
-use std::{io::{self, Write}, iter, borrow::Cow};
+use std::{io::{self, Write}, borrow::Cow};
 
 use prettytable::{
     format::{Alignment, TableFormat},
@@ -65,7 +65,7 @@ impl StatFmt {
                 4 => Cow::from(format!("   {heading}")),
                 _ => Cow::from(format!("    {heading}")),
             };
-            row.add_cell(Cell::new_align(&*heading, Alignment::LEFT).style_spec("b"));
+            row.add_cell(Cell::new_align(&heading, Alignment::LEFT).style_spec("b"));
         } else {
             return;
         }

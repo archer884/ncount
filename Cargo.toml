@@ -1,6 +1,6 @@
 [package]
 name = "ncount"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 authors = ["J/A <archer884@gmail.com>"]
 license = "Unlicense"

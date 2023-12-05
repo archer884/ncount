@@ -1,4 +1,7 @@
-use std::{io::{self, Write}, borrow::Cow};
+use std::{
+    borrow::Cow,
+    io::{self, Write},
+};
 
 use prettytable::{
     format::{Alignment, TableFormat},

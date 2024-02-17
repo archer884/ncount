@@ -1,4 +1,4 @@
-use std::{ops, slice};
+use std::{iter, ops};
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -150,70 +150,13 @@ impl Document {
         self.heading = Some(heading.into());
     }
 
-    // FIXME: this has to be boxed because of a bug in the Rust compiler.
-    // pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = DocumentStats> + 'a> {
-    //     let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
-    //     if self.heading.is_some() {
-    //         Box::new(iter::once(DocumentStats(self)).chain(subdocs))
-    //     } else {
-    //         Box::new(subdocs)
-    //     }
-    // }
-
-    // FIXME: same fucking bug.
-    // pub struct DocumentStatsIter<'a, S> {
-    //     self_stats: Option<DocumentStats<'a>>,
-    //     subdocuments: S,
-    // }
-
-    // impl<'a, S> Iterator for DocumentStatsIter<'a, S>
-    // where
-    //     S: Iterator<Item = DocumentStats<'a>>,
-    // {
-    //     type Item = DocumentStats<'a>;
-
-    //     fn next(&mut self) -> Option<Self::Item> {
-    //         self.self_stats.take().or_else(|| self.subdocuments.next())
-    //     }
-    // }
-
-    // pub fn iter(&self) -> impl Iterator<Item = DocumentStats> {
-    //     DocumentStatsIter {
-    //         self_stats: Some(DocumentStats(self)),
-    //         subdocuments: self.subdocuments.iter().flat_map(|x| x.iter())
-    //     }
-    // }
-
-    // FIXME: SAME DUMBSHIT FUCKING BUG.
-    // pub fn iter(&self) -> DocumentStatsIter<impl Iterator<Item = DocumentStats>> {
-    //     DocumentStatsIter {
-    //         self_stats: Some(DocumentStats(self)),
-    //         subdocuments: self.subdocuments.iter().flat_map(|x| x.iter())
-    //     }
-    // }
-
-    // FIXME: Fucking **FINALLY.**
-    pub fn iter(&self) -> DocumentStatsIter {
-        DocumentStatsIter {
-            self_stats: Some(self),
-            subdocuments: self.subdocuments.iter(),
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = DocumentStats> + 'a> {
+        let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
+        if self.heading.is_some() {
+            Box::new(iter::once(DocumentStats(self)).chain(subdocs))
+        } else {
+            Box::new(subdocs)
         }
-    }
-}
-
-pub struct DocumentStatsIter<'a> {
-    self_stats: Option<&'a Document>,
-    subdocuments: slice::Iter<'a, Document>,
-}
-
-impl<'a> Iterator for DocumentStatsIter<'a> {
-    type Item = DocumentStats<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.self_stats
-            .take()
-            .or_else(|| self.subdocuments.next())
-            .map(DocumentStats)
     }
 }
 

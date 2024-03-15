@@ -26,5 +26,10 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 unicode-segmentation = "1.11.0"
 
 [profile.release]
-lto = "thin"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+debug = 0
 # debug = true # used for flamegraph generation

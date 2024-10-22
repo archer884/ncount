@@ -1,6 +1,6 @@
 [package]
 name = "ncount"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 authors = ["J/A <archer884@gmail.com>"]
 license = "Unlicense"
@@ -14,16 +14,16 @@ A word count tool intended to derive useful stats from markdown.
 """
 
 [dependencies]
-clap = { version = "4.5.1", features = ["derive", "wrap_help"] }
-either = "1.10.0"
-globwalk = "0.8.1"
+clap = { version = "4.5.20", features = ["derive", "wrap_help"] }
+either = "1.13.0"
+globwalk = "0.9.1"
 libsw = "3.3.1"
 prettytable-rs = "0.10.0"
-regex = "1.10.3"
-thiserror = "1.0.57"
+regex = "1.11.0"
+thiserror = "1.0.65"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-unicode-segmentation = "1.11.0"
+unicode-segmentation = "1.12.0"
 
 [profile.release]
 lto = true

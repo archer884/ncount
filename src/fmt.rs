@@ -1,8 +1,11 @@
+mod heading;
+
 use std::{
     borrow::Cow,
     io::{self, Write},
 };
 
+use heading::Heading;
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
@@ -60,9 +63,9 @@ impl StatFmt {
     fn add_row(&mut self, table: &mut Table, stats: DocumentStats) {
         let row = table.add_empty_row();
 
-        if let Some(heading) = stats.heading() {
+        if let Some(heading) = stats.heading().map(Heading) {
             let heading = match stats.level() {
-                0 | 1 => Cow::from(heading),
+                0 | 1 => Cow::from(heading.to_string()),
                 2 => Cow::from(format!(" {heading}")),
                 3 => Cow::from(format!("  {heading}")),
                 4 => Cow::from(format!("   {heading}")),

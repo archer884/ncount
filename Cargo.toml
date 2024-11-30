@@ -15,6 +15,7 @@ A word count tool intended to derive useful stats from markdown.
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive", "wrap_help", "color"] }
+compact_str = "0.8.0"
 either = "1.13.0"
 globwalk = "0.9.1"
 libsw = "3.3.1"

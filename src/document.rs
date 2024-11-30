@@ -1,5 +1,6 @@
 use std::{iter, ops};
 
+use compact_str::CompactString;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug)]
@@ -78,7 +79,7 @@ impl DocumentBuilder {
 
 #[derive(Clone, Debug)]
 pub struct Document {
-    heading: Option<String>,
+    heading: Option<CompactString>,
     level: i32,
     paragraphs: Paragraphs,
     subdocuments: Vec<Document>,
@@ -150,7 +151,7 @@ impl Document {
         self.heading = Some(heading.into());
     }
 
-    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = DocumentStats> + 'a> {
+    pub fn iter(&'_ self) -> Box<dyn Iterator<Item = DocumentStats> + '_> {
         let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
         if self.heading.is_some() {
             Box::new(iter::once(DocumentStats(self)).chain(subdocs))

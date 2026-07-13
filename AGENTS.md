@@ -22,7 +22,9 @@ smaller canned sample for quick checks.
 3. `document::DocumentBuilder` — walks the filtered text line by line,
    building a tree of `Document`s keyed by Markdown heading level (`#`
    depth). Each leading blank-trimmed non-heading line is a "paragraph";
-   its word count comes from `unicode_words().count()`.
+   its word count comes from `count_words()`, which fast-paths pure-ASCII
+   lines through a hand-rolled tokenizer and falls back to
+   `unicode_words()` for anything else (see below).
 4. `fmt::StatFmt` — walks the finished `Document` tree, optionally filters
    to a subtree by heading (case-insensitive prefix match), and renders a
    `prettytable` table to stdout, with a running cumulative word total.
@@ -49,6 +51,43 @@ opportunistically since they were small and already understood:
   Box<dyn Iterator<Item = DocumentStats> + '_>`) fixed by spelling out
   `DocumentStats<'_>` explicitly. Not a real bug — clippy got stricter
   since this code was last touched.
+- **Added a unit test suite** (`#[cfg(test)] mod tests` in `document.rs`
+  and `filter.rs`, 18 tests total) as a characterization safety net before
+  touching word-counting — covers heading/level tree building, paragraph
+  aggregation, the "text before the first heading is invisible" quirk (see
+  below), `get_heading` prefix matching, and comment/footnote/note
+  stripping. Run with `cargo test`.
+- **Added an ASCII fast path for word counting** (`document.rs`:
+  `count_words` / `ascii_word_count`), profiled and measured, not just
+  theorized:
+  - Profiling the real binary (temporary `Instant` timers, since reverted)
+    against the user's actual book showed `DocumentBuilder::apply`
+    (tree-building + word counting) at ~83% of total runtime, dwarfing
+    disk I/O (~1%) and comment/footnote regex filtering (~13%).
+    `unicode_words()`'s full UAX#29 segmentation was the dominant cost
+    within that.
+  - Checked for a drop-in faster crate first (`finl_unicode`) — its
+    Cargo features (`categories`, `grapheme_clusters`) show it doesn't
+    implement word-boundary segmentation at all, so no substitute exists.
+  - Empirically classified every ASCII punctuation character's
+    join-two-words behavior against real `unicode_words()` output (only
+    `' . : , ;` ever join, and only a single occurrence between the right
+    adjacent-character classes — hyphens/em-dashes never join, so
+    "co-authored" is 2 words but "don't" is 1). Wrote `ascii_word_count`
+    to that spec, with `count_words` falling back to `unicode_words()` for
+    any line containing a non-ASCII byte (rare in prose: 6 of 3,135 lines
+    in the user's real book).
+  - Validated with a differential test (`ascii_word_count_matches_unicode_words`,
+    40 synthetic edge cases, and `..._over_sample_fixture` against
+    `resource/sample.md`) asserting equality against `unicode_words()`
+    directly, so it stays correct-by-definition if that crate ever changes.
+    Also spot-checked against all 2,963 real paragraph lines in the user's
+    book (111,418/111,418 words matching) before committing.
+  - **Net result: ~8.06ms → ~3.13ms per run on the user's real book, a
+    2.57x end-to-end speedup**, confirmed via interleaved cold-process A/B
+    (not a single measurement) with byte-identical table output. The
+    user's call: not worth it for flow/performance on this machine, but
+    worth having for portability to slower runtime environments.
 
 Still open (lower priority per user — not yet hit in real usage):
 

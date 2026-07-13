@@ -3,13 +3,28 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use either::Either;
 use globwalk::GlobWalker;
 
 #[derive(Debug, Parser)]
 #[command(author, version)]
 pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Launch an interactive TUI that watches the given files for changes
+    Tui(CommonArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CommonArgs {
     /// file or directory paths
     paths: Vec<String>,
 
@@ -26,7 +41,9 @@ impl Args {
     pub fn parse() -> Self {
         Parser::parse()
     }
+}
 
+impl CommonArgs {
     pub fn materialize_files(&self) -> Vec<PathBuf> {
         // We still have to sort these things because the default enumeration order
         // on non-Windows file systems is freaking inode order. Thanks, guys!

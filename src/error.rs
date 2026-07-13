@@ -4,4 +4,7 @@ use std::io;
 pub enum Error {
     #[error(transparent)]
     IO(#[from] io::Error),
+
+    #[error(transparent)]
+    Notify(#[from] notify::Error),
 }

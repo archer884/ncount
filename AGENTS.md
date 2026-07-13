@@ -14,8 +14,18 @@ smaller canned sample for quick checks.
 
 ## Pipeline (main.rs)
 
-1. `cli::Args` — clap-parsed paths/glob patterns, `--filter`, `--verbose`.
-   `materialize_files()` resolves paths/globs to files and **sorts** them,
+`cli::Args` has an optional `#[command(subcommand)]` (`Command::Tui`) plus a
+`#[command(flatten)] common: CommonArgs` — clap disambiguates a literal
+`tui` first token from the top-level `paths: Vec<String>` correctly
+(confirmed with a standalone spike before building on it: `ncount tui
+foo.md`, `ncount foo.md`, and a file literally named `tui.md` all parse as
+expected). No subcommand → `run_once` (below, unchanged behavior); `tui`
+subcommand → `tui::run` (see "TUI" section below). `CommonArgs` carries
+`paths`/`--filter`/`--verbose` and is shared verbatim by both paths.
+
+`run_once` (classic one-shot mode, `main.rs`):
+
+1. `materialize_files()` resolves paths/globs to files and **sorts** them,
    because non-Windows readdir order is inode order, not name order.
 2. `filter::TextFilter` — one compiled regex strips comments/footnotes from
    each file's raw text before anything else sees it.
@@ -28,6 +38,70 @@ smaller canned sample for quick checks.
 4. `fmt::StatFmt` — walks the finished `Document` tree, optionally filters
    to a subtree by heading (case-insensitive prefix match), and renders a
    `prettytable` table to stdout, with a running cumulative word total.
+
+## TUI (`src/tui.rs` + `src/tui/`)
+
+`ncount tui <paths> [-f ...] [-v]` — an interactive, auto-refreshing
+alternative to the classic one-shot table, built on `ratatui` + `crossterm`
++ `notify`/`notify-debouncer-mini`. Reuses `document.rs`/`filter.rs`
+completely unchanged; `fmt.rs` stays the renderer for the classic path only.
+
+- **One `Document` per resolved file** (`tui/app.rs::App::files`), each
+  built through its own fresh `DocumentBuilder` — confirmed earlier in this
+  session that a builder is safe to use per-file rather than folded across
+  a whole directory. This is what makes watch-mode refresh cheap: a
+  file-change event only rebuilds *that* file's `Document`
+  (`App::reload`), not the whole tree.
+- **`tui/watch.rs`** watches the *parent directories* of resolved files
+  (not the exact file paths) via `notify-debouncer-mini`, 300ms debounce —
+  required because editors save via write-temp-then-rename (confirmed with
+  helix/vim's pattern in a driver test: renaming a new inode over the
+  watched path still fires a debounced event when the directory is
+  watched). Events are filtered down to the tracked path set and delivered
+  through a plain `mpsc::Receiver<DebounceEventResult>` (the crate has a
+  builtin `DebounceEventHandler` impl for `mpsc::Sender`, so no manual
+  callback/channel plumbing was needed).
+- **Filtering** mirrors the CLI's fallback exactly: try `get_heading()`
+  against each file's `Document` in order, first match wins; no match shows
+  a status-line warning (in-app equivalent of the CLI's stderr warning) and
+  falls back to showing everything. `-f`/`--filter` just seeds the initial
+  value; `f`/`/` opens a live text-input (vim/helix-style) to replace it at
+  runtime, `Enter` applies, `Esc` reverts to whatever was active before.
+- **Per-row expand, not a global verbose toggle** — the CLI's `-v` is
+  accepted (for `CommonArgs` flag-compatibility) but *ignored* in the TUI,
+  per explicit instruction. Every row starts collapsed (Words/Total only).
+  `v` **toggles** the selected row (expand if collapsed, collapse if
+  expanded); `→`/`←` expand/collapse it directionally (so `→` on an
+  already-expanded row is a no-op, unlike `v`). `render.rs` checks whether
+  *any* currently-visible row is expanded and swaps between a 3-column
+  (`§ Words Total`) and 6-column (`§ Count¶ Avg¶ Long¶ Words Total`) `Table`
+  + header for the whole frame — the Count¶/Avg¶/Long¶ header labels only
+  exist on screen when something is actually revealed, not as blank columns
+  sitting there unused. Chosen over a hand-rolled variable-height list
+  because `Table` gets automatic column-width alignment for free (same as
+  `prettytable` does today), at the cost of the reveal not literally
+  growing/animating one row in place — it widens the whole table instead.
+  Expand-state and selection are keyed by `(file_index, heading text)`, not
+  row index, so a live refresh that changes row count doesn't scramble
+  which rows are expanded.
+- **Navigation**: `j`/`k`/`↑`/`↓` move the `ratatui::widgets::TableState`
+  selection (which drives scroll-into-view automatically — no hand-rolled
+  scroll math). `q`/`Esc`/`Ctrl-C` quit. Ctrl-C needed explicit handling
+  since raw mode intercepts the signal (crossterm never delivers a SIGINT
+  in raw mode — it arrives as a normal key event with `KeyModifiers::CONTROL`).
+- **Terminal safety**: a panic hook (installed in `tui::mod`'s
+  `init_terminal`) disables raw mode and leaves the alternate screen before
+  the default panic handler runs — without it, a bug in the TUI leaves the
+  user's shell stuck. Verified end-to-end (not just by reading the code) by
+  driving the compiled binary through a real pty (Python + `pyte`, since no
+  tmux/screen was available in this environment) — confirmed clean
+  `\x1b[?1049l\x1b[?25h` (leave-alt-screen + show-cursor) in the raw output
+  tail after `q`, and exit code 0 after both `q` and Ctrl-C.
+- Module layout deliberately mirrors the existing `fmt.rs` + `fmt/heading.rs`
+  pattern already in this codebase: `src/tui.rs` (entry point, terminal
+  setup/teardown, event loop) + `src/tui/{app,render,watch}.rs`, **not**
+  `src/tui/mod.rs` — this project's explicit preference is no `mod.rs`
+  files (2018-style module paths only).
 
 ## Known issues
 
@@ -128,3 +202,9 @@ Still open (lower priority per user — not yet hit in real usage):
 - Release profile is tuned for a small fast binary (`lto = true`,
   `codegen-units = 1`, `panic = "abort"`) — consistent with the "don't
   break flow state" goal; keep new dependencies lean for the same reason.
+  `ratatui` is added with `default-features = false, features = ["crossterm"]`
+  rather than its default `all-widgets` feature set, for the same reason —
+  only `Table`/`Paragraph` and a crossterm backend are actually used.
+- **No `mod.rs` files, ever** — explicit user preference. A module with
+  submodules is always `name.rs` + `name/*.rs` (2018-style paths), e.g.
+  `fmt.rs` + `fmt/heading.rs`, `tui.rs` + `tui/{app,render,watch}.rs`.

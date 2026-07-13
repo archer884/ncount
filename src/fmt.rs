@@ -6,6 +6,7 @@ use std::{
 };
 
 use heading::Heading;
+use owo_colors::OwoColorize;
 use prettytable::{
     format::{Alignment, TableFormat},
     Cell, Table,
@@ -108,9 +109,16 @@ impl StatFmt {
     }
 
     fn apply_filter<'a>(&self, document: &'a Document) -> Option<&'a Document> {
-        self.filter
-            .as_ref()
-            .and_then(|heading| document.get_heading(&heading.to_ascii_uppercase()))
+        let heading = self.filter.as_ref()?;
+        let found = document.get_heading(&heading.to_ascii_uppercase());
+        if found.is_none() {
+            eprintln!(
+                "{}",
+                format!("warning: no heading matching {heading:?} found; showing everything")
+                    .yellow()
+            );
+        }
+        found
     }
 
     /// Builds a table with appropriate format and headers.

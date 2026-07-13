@@ -151,7 +151,7 @@ impl Document {
         self.heading = Some(heading.into());
     }
 
-    pub fn iter(&'_ self) -> Box<dyn Iterator<Item = DocumentStats> + '_> {
+    pub fn iter(&'_ self) -> Box<dyn Iterator<Item = DocumentStats<'_>> + '_> {
         let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
         if self.heading.is_some() {
             Box::new(iter::once(DocumentStats(self)).chain(subdocs))
@@ -184,8 +184,6 @@ pub struct Paragraphs {
     pub count: u32,
     /// length of the longest paragraph
     pub max: u32,
-    /// length of the shortest paragraph
-    pub min: u32,
     /// total length of all paragraphs
     pub total: u32,
 }
@@ -198,7 +196,6 @@ impl Paragraphs {
     fn add(&mut self, p: u32) {
         self.count += 1;
         self.max = self.max.max(p);
-        self.min = self.min.min(p);
         self.total += p;
     }
 
@@ -217,8 +214,6 @@ pub struct OverallStats {
     pub count: u32,
     /// length of the longest paragraph
     pub max: u32,
-    /// length of the shortest paragraph
-    pub min: u32,
     /// total length of all paragraphs
     pub total: u32,
 }
@@ -234,7 +229,6 @@ impl<'a> ops::AddAssign<DocumentStats<'a>> for OverallStats {
         let p = rhs.paragraphs();
         self.count += p.count;
         self.max = self.max.max(p.max);
-        self.min = self.min.min(p.min);
         self.total += p.total;
     }
 }

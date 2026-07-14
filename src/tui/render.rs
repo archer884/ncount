@@ -30,23 +30,28 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
     let [table_area, footer_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    let any_expanded = rows.iter().any(|row| {
-        app.expanded
-            .contains(&(row.file_index, row.heading.clone()))
+    let selected = app.table_state.selected();
+    let show_detail = rows.iter().enumerate().any(|(i, row)| {
+        Some(i) == selected || app.expanded.contains(&(row.file_index, row.heading.clone()))
     });
 
     let mut running = 0u32;
     let table_rows: Vec<Row> = rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(i, row)| {
             running += row.paragraphs.total;
-            build_row(app, row, running, any_expanded)
+            let pinned = app
+                .expanded
+                .contains(&(row.file_index, row.heading.clone()));
+            let verbose = Some(i) == selected || pinned;
+            build_row(row, running, verbose, pinned, show_detail)
         })
         .collect();
 
-    let header = if any_expanded {
+    let header = if show_detail {
         Row::new([
-            Cell::from("§"),
+            Cell::from(" §"),
             right("Count¶"),
             right("Avg¶"),
             right("Long¶"),
@@ -54,11 +59,11 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
             right("Total"),
         ])
     } else {
-        Row::new(vec![Cell::from("§"), right("Words"), right("Total")])
+        Row::new(vec![Cell::from(" §"), right("Words"), right("Total")])
     }
     .style(Style::new().add_modifier(Modifier::BOLD));
 
-    let table = if any_expanded {
+    let table = if show_detail {
         Table::new(table_rows, VERBOSE_WIDTHS)
     } else {
         Table::new(table_rows, COMPACT_WIDTHS)
@@ -70,14 +75,18 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
     frame.render_widget(Paragraph::new(footer_text(app, running)), footer_area);
 }
 
-fn build_row<'a>(app: &App, row: &'a RowData, running_total: u32, any_expanded: bool) -> Row<'a> {
+fn build_row(
+    row: &RowData,
+    running_total: u32,
+    verbose: bool,
+    pinned: bool,
+    show_detail: bool,
+) -> Row<'static> {
     let indent = "  ".repeat(row.level.saturating_sub(1).max(0) as usize);
-    let heading = format!("{indent}{}", row.heading);
-    let expanded = app
-        .expanded
-        .contains(&(row.file_index, row.heading.clone()));
+    let marker = if pinned { "●" } else { " " };
+    let heading = format!("{marker} {indent}{}", row.heading);
 
-    if !any_expanded {
+    if !show_detail {
         return Row::new([
             Cell::from(heading),
             right(row.paragraphs.total.to_string()),
@@ -85,7 +94,7 @@ fn build_row<'a>(app: &App, row: &'a RowData, running_total: u32, any_expanded: 
         ]);
     }
 
-    let (count, avg, max) = if expanded {
+    let (count, avg, max) = if verbose {
         (
             row.paragraphs.count.to_string(),
             row.paragraphs.average_len().to_string(),
@@ -113,7 +122,7 @@ fn footer_text(app: &App, running_total: u32) -> String {
                 status.clone()
             } else {
                 format!(
-                    "{running_total} words  |  j/k move  v toggle  →/← expand/collapse  f // filter  q quit"
+                    "{running_total} words  |  j/k move  v pin  →/← pin/unpin  f // filter  q quit"
                 )
             }
         }

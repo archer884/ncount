@@ -34,7 +34,7 @@ fn run_once(args: &CommonArgs) -> Result<()> {
     let filter = TextFilter::new();
     let mut builder = DocumentBuilder::new();
 
-    for file in args.materialize_files() {
+    for file in args.materialize_files()? {
         tracing::debug!("path: {}", file.display());
         let text = fs::read_to_string(file)?;
         builder.apply(filter.lex(&text))

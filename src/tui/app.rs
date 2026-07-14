@@ -45,7 +45,7 @@ impl App {
     pub fn load(common: &CommonArgs) -> Result<Self> {
         let text_filter = TextFilter::new();
         let mut files = Vec::new();
-        for path in common.materialize_files() {
+        for path in common.materialize_files()? {
             let document = build_document(&text_filter, &path)?;
             files.push(LoadedFile { path, document });
         }

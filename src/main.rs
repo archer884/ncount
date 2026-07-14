@@ -37,7 +37,7 @@ fn run_once(args: &CommonArgs) -> Result<()> {
     for file in args.materialize_files() {
         tracing::debug!("path: {}", file.display());
         let text = fs::read_to_string(file)?;
-        builder.apply(filter.filter_text(&text))
+        builder.apply(filter.lex(&text))
     }
 
     let mut formatter = StatFmt::new(args.verbose());

@@ -16,7 +16,10 @@ pub struct LoadedFile {
 
 pub enum Mode {
     Normal,
-    Filter { buffer: String, previous: Option<String> },
+    Filter {
+        buffer: String,
+        previous: Option<String>,
+    },
 }
 
 /// A single flattened row for display: one heading, wherever it lives.
@@ -190,6 +193,6 @@ fn flatten(file_index: usize, document: &Document) -> Vec<RowData> {
 fn build_document(filter: &TextFilter, path: &Path) -> Result<Document> {
     let text = fs::read_to_string(path)?;
     let mut builder = DocumentBuilder::new();
-    builder.apply(filter.filter_text(&text));
+    builder.apply(filter.lex(&text));
     Ok(builder.finalize())
 }

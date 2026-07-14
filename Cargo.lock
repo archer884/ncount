@@ -658,12 +658,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libsw"
-version = "3.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0673364c1ef7a1674241dbad9ba2415354103d6126451f01eeb7aaa25d6b4fce"
-
-[[package]]
 name = "line-clipping"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -750,7 +744,6 @@ dependencies = [
  "crossterm",
  "either",
  "globwalk",
- "libsw",
  "notify",
  "notify-debouncer-mini",
  "owo-colors",

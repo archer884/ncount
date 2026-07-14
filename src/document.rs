@@ -3,6 +3,8 @@ use std::{iter, ops};
 use compact_str::CompactString;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::filter::LineEvent;
+
 #[derive(Clone, Debug)]
 pub struct DocumentBuilder {
     root: Document,
@@ -21,58 +23,29 @@ impl DocumentBuilder {
         self.root
     }
 
-    pub fn apply(&mut self, s: impl AsRef<str>) {
-        // It is the responsibility of the document builder to count the number of words in a
-        // string. However, it is my intention to provide the document builder only strings which
-        // have been cleaned with regard to comments and notes.
-
-        let paragraphs = s.as_ref().lines().filter_map(|line| {
-            let line = line.trim();
-            if !line.is_empty() {
-                Some(line)
-            } else {
-                None
-            }
-        });
-
-        // At this point, we are concerned with two types of lines (paragraph-level elements):
-        // - Paragraphs containing text
-        // - Headings containing titles and characterized by some level or other
-        // A paragraph is applied to the "current" document. However, a heading triggers the
-        // generation of a new document instead. The question of how we keep track of which
-        // document is the "current" document is... left as an exercise to the reader.
-
-        fn try_get_heading(s: &str) -> Option<(&str, i32)> {
-            if !s.starts_with('#') {
-                return None;
-            }
-
-            let level = s.bytes().take_while(|&u| u == b'#').count() as i32;
-            let heading = s.trim_start_matches('#').trim();
-            Some((heading, level))
-        }
-
+    /// Applies an already-lexed stream of heading/paragraph events (see
+    /// `filter::TextFilter::lex`) to the tree. A heading updates the current
+    /// level and starts a new document; a paragraph adds its word count to
+    /// whichever document is current.
+    pub fn apply(&mut self, events: impl Iterator<Item = LineEvent>) {
         let mut target = self.root.current_document(self.current_level);
-        for s in paragraphs {
-            // If this line turns out to be a heading, we need to update our current level and
-            // update our target document. Otherwise, we're just going to continue with our
-            // current target.
-
-            if let Some((heading, level)) = try_get_heading(s) {
-                tracing::debug!(
-                    heading,
-                    level,
-                    current_level = self.current_level,
-                    "requesting current document"
-                );
-                target = self.root.new_document(level);
-                target.set_heading(heading);
-                self.current_level = level;
-                continue;
+        for event in events {
+            match event {
+                LineEvent::Heading(heading, level) => {
+                    tracing::debug!(
+                        heading = heading.as_str(),
+                        level,
+                        current_level = self.current_level,
+                        "requesting current document"
+                    );
+                    target = self.root.new_document(level);
+                    target.set_heading(heading);
+                    self.current_level = level;
+                }
+                LineEvent::Paragraph(word_count) => {
+                    target.add_paragraph(word_count);
+                }
             }
-
-            // Now that we have a target, we just need to apply the actual text.
-            target.add_paragraph(count_words(s));
         }
     }
 }
@@ -81,7 +54,7 @@ impl DocumentBuilder {
 /// fast path for the (overwhelmingly common, in prose) pure-ASCII case.
 /// Falls back to full Unicode segmentation whenever a line isn't ASCII, so
 /// correctness for non-ASCII text is inherited directly from the crate.
-fn count_words(s: &str) -> u32 {
+pub(crate) fn count_words(s: &str) -> u32 {
     if s.is_ascii() {
         ascii_word_count(s)
     } else {
@@ -218,8 +191,8 @@ impl Document {
         self.paragraphs.add(p);
     }
 
-    fn set_heading(&mut self, heading: &str) {
-        self.heading = Some(heading.into());
+    fn set_heading(&mut self, heading: CompactString) {
+        self.heading = Some(heading);
     }
 
     pub fn iter(&'_ self) -> Box<dyn Iterator<Item = DocumentStats<'_>> + '_> {
@@ -319,8 +292,9 @@ mod tests {
     use super::*;
 
     fn build(text: &str) -> Document {
+        let filter = crate::filter::TextFilter::new();
         let mut builder = DocumentBuilder::new();
-        builder.apply(text);
+        builder.apply(filter.lex(text));
         builder.finalize()
     }
 
@@ -370,9 +344,10 @@ mod tests {
     #[test]
     fn apply_called_multiple_times_accumulates() {
         // Mirrors main.rs's usage: one builder folds over several files in sequence.
+        let filter = crate::filter::TextFilter::new();
         let mut builder = DocumentBuilder::new();
-        builder.apply("# Chapter\n\nfirst file words");
-        builder.apply("more words in second file");
+        builder.apply(filter.lex("# Chapter\n\nfirst file words"));
+        builder.apply(filter.lex("more words in second file"));
         let doc = builder.finalize();
         let stats: Vec<_> = doc.iter().collect();
         assert_eq!(stats.len(), 1);

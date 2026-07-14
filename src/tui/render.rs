@@ -30,9 +30,10 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
     let [table_area, footer_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    let any_expanded = rows
-        .iter()
-        .any(|row| app.expanded.contains(&(row.file_index, row.heading.clone())));
+    let any_expanded = rows.iter().any(|row| {
+        app.expanded
+            .contains(&(row.file_index, row.heading.clone()))
+    });
 
     let mut running = 0u32;
     let table_rows: Vec<Row> = rows
@@ -72,7 +73,9 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
 fn build_row<'a>(app: &App, row: &'a RowData, running_total: u32, any_expanded: bool) -> Row<'a> {
     let indent = "  ".repeat(row.level.saturating_sub(1).max(0) as usize);
     let heading = format!("{indent}{}", row.heading);
-    let expanded = app.expanded.contains(&(row.file_index, row.heading.clone()));
+    let expanded = app
+        .expanded
+        .contains(&(row.file_index, row.heading.clone()));
 
     if !any_expanded {
         return Row::new([

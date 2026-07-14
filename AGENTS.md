@@ -27,17 +27,98 @@ subcommand → `tui::run` (see "TUI" section below). `CommonArgs` carries
 
 1. `materialize_files()` resolves paths/globs to files and **sorts** them,
    because non-Windows readdir order is inode order, not name order.
-2. `filter::TextFilter` — one compiled regex strips comments/footnotes from
-   each file's raw text before anything else sees it.
-3. `document::DocumentBuilder` — walks the filtered text line by line,
-   building a tree of `Document`s keyed by Markdown heading level (`#`
-   depth). Each leading blank-trimmed non-heading line is a "paragraph";
-   its word count comes from `count_words()`, which fast-paths pure-ASCII
-   lines through a hand-rolled tokenizer and falls back to
-   `unicode_words()` for anything else (see below).
+2. `filter::TextFilter::lex()` — a lexer/bundler pipeline (see below) turns
+   each file's raw text directly into a stream of heading/paragraph events,
+   skipping comments/footnotes/notes as it goes rather than materializing a
+   separate cleaned copy of the text first.
+3. `document::DocumentBuilder::apply()` consumes that event stream and
+   builds a tree of `Document`s keyed by Markdown heading level (`#` depth).
+   Word counts come from `count_words()` (`pub(crate)`, used by both
+   `document.rs` and `filter.rs`), which fast-paths pure-ASCII text through
+   a hand-rolled tokenizer and falls back to `unicode_words()` for anything
+   else (see below).
 4. `fmt::StatFmt` — walks the finished `Document` tree, optionally filters
    to a subtree by heading (case-insensitive prefix match), and renders a
    `prettytable` table to stdout, with a running cumulative word total.
+
+### The lexer/bundler rewrite (`filter.rs`)
+
+Replaced the original design (one regex `replace_all` producing a fully
+materialized cleaned string, then `document.rs` doing `.lines()` +
+per-line heading/word parsing) with a pipeline the user specifically
+designed to avoid a bug they'd hit in an earlier attempt at this: a
+comment/footnote landing in the *middle* of a line must not fragment that
+line into two separate paragraphs. Went through two iterations — the
+second (`Chunks`, current) came from the user directly after seeing the
+first (`Fragments`, a per-line lexer) turn out performance-neutral; both
+are recorded here since the reasoning behind the second design only makes
+sense in contrast to the first.
+
+**Current design — `Chunks` (coarse lexer) + `Lines` (boundary-merging bundler):**
+
+- **`Chunks`** (private iterator in `filter.rs`): walks the raw text via
+  `regex::Regex::find_iter` (scan only, no allocation), yielding the
+  surviving text *between* matches as a single `&str` slice each — unlike
+  a per-line lexer, one chunk can span many real lines; it only splits at
+  a removed span. Cost scales with how many comments/footnotes exist
+  (typically a handful in a whole book), not with line count (thousands).
+- **`Lines`** (private iterator in `filter.rs`): runs ordinary
+  `str::lines()` — a well-optimized std primitive — over the bulk of each
+  chunk, and only does the "hard" work (per the user's own description of
+  what made their earlier attempt tricky) at the two ends of each chunk.
+  That work reduces to one check: does the chunk end with `\n`? If yes,
+  its last line was already cleanly terminated before the next match even
+  started, so the next chunk starts a genuinely new line. If no, the match
+  spliced two textual halves together inline (a comment sitting
+  mid-sentence), so the next chunk's first line gets merged onto this
+  chunk's dangling last line before either is classified or counted. A
+  `pending_mode: LineMode` (`Undecided` / `Heading(CompactString)` /
+  `Paragraph(u32)`) plus a `pending_non_whitespace: bool` carry across
+  chunk boundaries to make that merge possible; every other line within a
+  chunk is unambiguous and gets classified/counted directly.
+- **`DocumentBuilder::apply`** (`document.rs`) unchanged by either
+  iteration — it only ever consumed `LineEvent`s, never cared how they
+  were produced.
+- Skip-blank-line semantics, heading text reassembly through an inline
+  comment, and the zero-word-but-non-blank-line case (`"---"`) all carry
+  over unchanged from the first iteration (see the test list below) —
+  swapping `Fragments` for `Chunks` didn't change any observable behavior,
+  only how cheaply it gets there.
+
+**Validation (repeated for this second iteration, not assumed from the first):**
+all 24 tests (18 original + 6 lexer-specific, unmodified from the first
+iteration) still pass without changes, confirming the rewrite is
+behavior-preserving. Also re-ran the full differential check — old
+(`replace_all`) vs. new (`Chunks`/`Lines`) binaries built side by side via
+`git stash`, diffed over the user's whole real book, every file
+individually, and `resource/sample.md` — byte-identical in every case.
+
+**Performance — better than the first iteration, still not a clear win,
+reported honestly:**
+
+| | original (`replace_all`) | `Fragments` (1st, per-line) | `Chunks` (2nd, per-match) |
+|---|---|---|---|
+| `lex`/`filter` + `apply`, mean of 30 runs | ~2.37ms | ~2.49ms | ~2.43ms |
+
+The second design cut the gap to the original roughly in half (from ~5%
+slower to ~3% slower) by moving the boundary-merge bookkeeping from
+"once per line" (~3,135 times in the real book) to "once per match"
+(a few dozen times) — exactly the mechanism the user predicted. It didn't
+fully close the gap or overtake the original in wall-clock terms; on this
+corpus, `str::lines()` + a plain `starts_with('#')` check per line is
+apparently about as fast as this gets without also restructuring
+word-counting itself. Allocation traffic (measured the same way as the
+first iteration, via a temporary counting `#[global_allocator]`) should
+carry over essentially unchanged from the first design's ~31% reduction
+in total bytes allocated, since `Chunks` still never materializes a
+cleaned copy of the text — not independently re-measured for this second
+iteration, since the mechanism (chunks are slices of the original text,
+same as fragments were) doesn't change that story.
+- `libsw` dependency removed — it was only ever used for the old
+  `filter_text`'s per-call debug timing, which doesn't map cleanly onto a
+  lazy iterator API (there's no single "elapsed time for filtering" moment
+  to log anymore; the work is spread across however many `.next()` calls
+  the caller makes).
 
 ## TUI (`src/tui.rs` + `src/tui/`)
 

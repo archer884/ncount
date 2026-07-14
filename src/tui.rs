@@ -98,7 +98,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent, rows: &[RowData]) {
         KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
         KeyCode::Char('j') | KeyCode::Down => app.select_next(rows.len()),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev(),
-        KeyCode::Char('v') => app.toggle_selected(rows),
+        KeyCode::Char('v') | KeyCode::Char(' ') => app.toggle_selected(rows),
         KeyCode::Right => app.expand_selected(rows),
         KeyCode::Left => app.collapse_selected(rows),
         KeyCode::Char('f') | KeyCode::Char('/') => app.enter_filter_mode(),

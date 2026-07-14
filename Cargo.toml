@@ -14,21 +14,21 @@ A word count tool intended to derive useful stats from markdown.
 """
 
 [dependencies]
-clap = { version = "4.5.20", features = ["derive", "wrap_help", "color"] }
-compact_str = "0.8.0"
+clap = { version = "4.6.1", features = ["derive", "wrap_help", "color"] }
+compact_str = "0.10.0"
 crossterm = "0.29.0"
-either = "1.13.0"
+either = "1.16.0"
 globwalk = "0.9.1"
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
 owo-colors = "4.3.0"
 prettytable-rs = "0.10.0"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
-regex = "1.11.0"
-thiserror = "1.0.65"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-unicode-segmentation = "1.12.0"
+regex = "1.13.0"
+thiserror = "2.0.18"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+unicode-segmentation = "1.13.3"
 
 [profile.release]
 lto = true

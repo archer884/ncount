@@ -66,3 +66,9 @@ The `--detail`/`--verbose` flag causes paragraph information to be printed, incl
  3.2                        1271    2592
  3.3                          99    2691
 ```
+
+## To cross-compile for Windows:
+
+```shell
+$ cargo build --target x86_64-pc-windows-gnu --release
+````

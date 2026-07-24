@@ -127,6 +127,22 @@ impl App {
         self.table_state.select(Some(prev));
     }
 
+    pub fn select_page_down(&mut self, page_size: usize, row_count: usize) {
+        let offset = self.table_state.offset();
+        let selected = self.table_state.selected().unwrap_or(offset);
+        let (new_offset, new_selected) = page_down(offset, selected, page_size, row_count);
+        *self.table_state.offset_mut() = new_offset;
+        self.table_state.select(Some(new_selected));
+    }
+
+    pub fn select_page_up(&mut self, page_size: usize) {
+        let offset = self.table_state.offset();
+        let selected = self.table_state.selected().unwrap_or(offset);
+        let (new_offset, new_selected) = page_up(offset, selected, page_size);
+        *self.table_state.offset_mut() = new_offset;
+        self.table_state.select(Some(new_selected));
+    }
+
     pub fn expand_selected(&mut self, rows: &[RowData]) {
         if let Some(row) = self.selected_row(rows) {
             self.expanded.insert((row.file_index, row.heading.clone()));
@@ -195,4 +211,71 @@ fn build_document(filter: &TextFilter, path: &Path) -> Result<Document> {
     let mut builder = DocumentBuilder::new();
     builder.apply(filter.lex(&text));
     Ok(builder.finalize())
+}
+
+/// Scroll the viewport down one page while keeping the cursor on the same
+/// screen row. Returns the new `(offset, selected)`. The viewport scrolls
+/// until its last page is full (`max_offset = row_count - page_size`); at
+/// the bottom the cursor clamps onto the final rows.
+fn page_down(offset: usize, selected: usize, page_size: usize, row_count: usize) -> (usize, usize) {
+    if row_count == 0 || page_size == 0 {
+        return (offset, selected);
+    }
+    let screen_pos = selected.saturating_sub(offset);
+    let max_offset = row_count.saturating_sub(page_size);
+    let new_offset = (offset + page_size).min(max_offset);
+    let new_selected = (new_offset + screen_pos).min(row_count - 1);
+    (new_offset, new_selected)
+}
+
+/// Scroll the viewport up one page while keeping the cursor on the same
+/// screen row. Returns the new `(offset, selected)`.
+fn page_up(offset: usize, selected: usize, page_size: usize) -> (usize, usize) {
+    if page_size == 0 {
+        return (offset, selected);
+    }
+    let screen_pos = selected.saturating_sub(offset);
+    let new_offset = offset.saturating_sub(page_size);
+    (new_offset, new_offset + screen_pos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_down_keeps_cursor_on_same_screen_row() {
+        // viewport of 10, cursor at screen row 3 -> page lands at offset 10,
+        // cursor still on screen row 3 (now item 13).
+        assert_eq!(page_down(0, 3, 10, 50), (10, 13));
+    }
+
+    #[test]
+    fn page_down_clamps_at_the_bottom() {
+        // last full page already in view (max_offset = 40): no movement.
+        assert_eq!(page_down(40, 43, 10, 50), (40, 43));
+    }
+
+    #[test]
+    fn page_down_near_bottom_scroll_fully_but_keep_screen_row() {
+        // offset 35 -> clamps to 40; cursor screen row 3 preserved (38 -> 43).
+        assert_eq!(page_down(35, 38, 10, 50), (40, 43));
+    }
+
+    #[test]
+    fn page_down_is_a_noop_when_everything_fits() {
+        // fewer rows than a viewport: max_offset is 0, so nothing scrolls.
+        assert_eq!(page_down(0, 2, 10, 5), (0, 2));
+    }
+
+    #[test]
+    fn page_up_keeps_cursor_on_same_screen_row() {
+        assert_eq!(page_up(20, 23, 10), (10, 13));
+    }
+
+    #[test]
+    fn page_up_clamps_at_the_top() {
+        // offset 3 -> 0; cursor screen row 2 preserved (5 -> 2).
+        assert_eq!(page_up(3, 5, 10), (0, 2));
+    }
 }

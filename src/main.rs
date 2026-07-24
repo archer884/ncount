@@ -8,7 +8,7 @@ mod tui;
 
 use std::{fs, process};
 
-use cli::{Args, Command, CommonArgs};
+use cli::{Args, CommonArgs};
 use document::DocumentBuilder;
 use filter::TextFilter;
 use fmt::StatFmt;
@@ -19,9 +19,10 @@ fn main() {
     log::init();
 
     let args = Args::parse();
-    let result = match args.command {
-        Some(Command::Tui(common)) => tui::run(&common),
-        None => run_once(&args.common),
+    let result = if args.common.watch() {
+        tui::run(&args.common)
+    } else {
+        run_once(&args.common)
     };
 
     if let Err(e) = result {

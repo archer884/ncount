@@ -11,6 +11,7 @@ use crossterm::terminal::{
 };
 use crossterm::{execute, ExecutableCommand};
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Size;
 use ratatui::Terminal;
 
 use crate::cli::CommonArgs;
@@ -54,6 +55,12 @@ fn restore_terminal() -> Result<()> {
     Ok(())
 }
 
+/// Visible data rows: full height minus the footer (1) and the table
+/// header (1). Drives how far a PgUp/PgDn jump moves the selection.
+fn page_size(area: Size) -> usize {
+    area.height.saturating_sub(2).max(1) as usize
+}
+
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
@@ -66,7 +73,8 @@ fn event_loop(
         if event::poll(POLL_INTERVAL)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    handle_key(app, key, &rows);
+                    let page_size = page_size(terminal.size()?);
+                    handle_key(app, key, &rows, page_size);
                 }
             }
         }
@@ -81,7 +89,7 @@ fn event_loop(
     }
 }
 
-fn handle_key(app: &mut App, key: KeyEvent, rows: &[RowData]) {
+fn handle_key(app: &mut App, key: KeyEvent, rows: &[RowData], page_size: usize) {
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         app.should_quit = true;
         return;
@@ -89,15 +97,17 @@ fn handle_key(app: &mut App, key: KeyEvent, rows: &[RowData]) {
 
     match &app.mode {
         Mode::Filter { .. } => handle_filter_key(app, key),
-        Mode::Normal => handle_normal_key(app, key, rows),
+        Mode::Normal => handle_normal_key(app, key, rows, page_size),
     }
 }
 
-fn handle_normal_key(app: &mut App, key: KeyEvent, rows: &[RowData]) {
+fn handle_normal_key(app: &mut App, key: KeyEvent, rows: &[RowData], page_size: usize) {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
         KeyCode::Char('j') | KeyCode::Down => app.select_next(rows.len()),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev(),
+        KeyCode::PageDown => app.select_page_down(page_size, rows.len()),
+        KeyCode::PageUp => app.select_page_up(page_size),
         KeyCode::Char('v') | KeyCode::Char(' ') => app.toggle_selected(rows),
         KeyCode::Right => app.expand_selected(rows),
         KeyCode::Left => app.collapse_selected(rows),

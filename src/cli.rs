@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use either::Either;
 
 use crate::error::Error;
@@ -12,17 +12,8 @@ use crate::Result;
 #[derive(Debug, Parser)]
 #[command(author, version)]
 pub struct Args {
-    #[command(subcommand)]
-    pub command: Option<Command>,
-
     #[command(flatten)]
     pub common: CommonArgs,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum Command {
-    /// Launch an interactive TUI that watches the given files for changes
-    Tui(CommonArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -37,6 +28,10 @@ pub struct CommonArgs {
     /// print extended information
     #[arg(short, long)]
     verbose: bool,
+
+    /// watch files and launch the interactive TUI
+    #[arg(short, long)]
+    watch: bool,
 }
 
 impl Args {
@@ -88,6 +83,10 @@ impl CommonArgs {
     pub fn verbose(&self) -> bool {
         self.verbose
     }
+
+    pub fn watch(&self) -> bool {
+        self.watch
+    }
 }
 
 fn iter_path_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
@@ -125,6 +124,7 @@ mod tests {
             paths: paths.iter().map(|s| s.to_string()).collect(),
             filter: None,
             verbose: false,
+            watch: false,
         }
     }
 

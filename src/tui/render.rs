@@ -32,7 +32,10 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
 
     let selected = app.table_state.selected();
     let show_detail = rows.iter().enumerate().any(|(i, row)| {
-        Some(i) == selected || app.expanded.contains(&(row.file_index, row.heading.clone()))
+        Some(i) == selected
+            || app
+                .expanded
+                .contains(&(row.file_index, row.heading.clone()))
     });
 
     let mut running = 0u32;
@@ -122,7 +125,7 @@ fn footer_text(app: &App, running_total: u32) -> String {
                 status.clone()
             } else {
                 format!(
-                    "{running_total} words  |  j/k move  v pin  →/← pin/unpin  f // filter  q quit"
+                    "{running_total} words  |  j/k move  PgUp/PgDn page  v pin  →/← pin/unpin  f // filter  q quit"
                 )
             }
         }

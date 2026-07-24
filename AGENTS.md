@@ -14,14 +14,13 @@ smaller canned sample for quick checks.
 
 ## Pipeline (main.rs)
 
-`cli::Args` has an optional `#[command(subcommand)]` (`Command::Tui`) plus a
-`#[command(flatten)] common: CommonArgs` — clap disambiguates a literal
-`tui` first token from the top-level `paths: Vec<String>` correctly
-(confirmed with a standalone spike before building on it: `ncount tui
-foo.md`, `ncount foo.md`, and a file literally named `tui.md` all parse as
-expected). No subcommand → `run_once` (below, unchanged behavior); `tui`
-subcommand → `tui::run` (see "TUI" section below). `CommonArgs` carries
-`paths`/`--filter`/`--verbose` and is shared verbatim by both paths.
+`cli::Args` flattens a single `CommonArgs`, which carries `paths`,
+`--filter`/`-f`, `--verbose`/`-v`, and `--watch`/`-w`. The `-w/--watch`
+flag selects between the two entry points: absent → `run_once` (classic
+one-shot table, below); present → `tui::run` (see "TUI" section below).
+(Dropping the earlier `tui` subcommand also retired the clap-disambiguation
+spike it needed — a literal `tui` first token vs. the `paths: Vec<String>`
+positional — since there's no subcommand to disambiguate anymore.)
 
 `run_once` (classic one-shot mode, `main.rs`):
 
@@ -122,7 +121,7 @@ same as fragments were) doesn't change that story.
 
 ## TUI (`src/tui.rs` + `src/tui/`)
 
-`ncount tui <paths> [-f ...] [-v]` — an interactive, auto-refreshing
+`ncount -w <paths> [-f ...]` — an interactive, auto-refreshing
 alternative to the classic one-shot table, built on `ratatui` + `crossterm`
 + `notify`/`notify-debouncer-mini`. Reuses `document.rs`/`filter.rs`
 completely unchanged; `fmt.rs` stays the renderer for the classic path only.
@@ -167,9 +166,17 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   which rows are expanded.
 - **Navigation**: `j`/`k`/`↑`/`↓` move the `ratatui::widgets::TableState`
   selection (which drives scroll-into-view automatically — no hand-rolled
-  scroll math). `q`/`Esc`/`Ctrl-C` quit. Ctrl-C needed explicit handling
-  since raw mode intercepts the signal (crossterm never delivers a SIGINT
-  in raw mode — it arrives as a normal key event with `KeyModifiers::CONTROL`).
+  scroll math). `PgUp`/`PgDn` scroll the viewport by one page *without*
+  moving the cursor off its screen row: the offset advances by one page
+  and the selection is re-placed at the same on-screen position
+  (`app.rs::page_down`/`page_up`, page size from `tui.rs::page_size`,
+  recomputed per keypress from the terminal height minus the footer and
+  the table header). This relies on ratatui's `Table` only re-deriving the
+  offset when the selection leaves the viewport, so a manually-set offset
+  with a visible selection is left intact. `q`/`Esc`/`Ctrl-C` quit.
+  Ctrl-C needed explicit handling since raw mode intercepts the signal
+  (crossterm never delivers a SIGINT in raw mode — it arrives as a normal
+  key event with `KeyModifiers::CONTROL`).
 - **Terminal safety**: a panic hook (installed in `tui::mod`'s
   `init_terminal`) disables raw mode and leaves the alternate screen before
   the default panic handler runs — without it, a bug in the TUI leaves the

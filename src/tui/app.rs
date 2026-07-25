@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use ratatui::widgets::TableState;
 
-use crate::cli::CommonArgs;
+use crate::cli::{expand_pattern, pattern_base_dir, CommonArgs, WatchSource};
 use crate::document::{Document, DocumentBuilder, Paragraphs};
 use crate::filter::TextFilter;
 use crate::Result;
@@ -17,6 +17,11 @@ pub struct LoadedFile {
     /// mid-save): the file drops out of the table until a reload succeeds.
     /// See `App::reload`.
     pub document: Option<Document>,
+    /// True when this file entered the set via a live glob pattern. Such
+    /// files are dropped entirely when a re-expansion stops matching them
+    /// (`App::sync_patterns`); literal-arg files stay forever and merely
+    /// hide when unreadable.
+    pub from_pattern: bool,
 }
 
 pub enum Mode {
@@ -29,7 +34,7 @@ pub enum Mode {
 
 /// A single flattened row for display: one heading, wherever it lives.
 pub struct RowData {
-    pub file_index: usize,
+    pub path: PathBuf,
     pub heading: String,
     pub level: i32,
     pub paragraphs: Paragraphs,
@@ -38,11 +43,17 @@ pub struct RowData {
 pub struct App {
     pub files: Vec<LoadedFile>,
     pub filter: Option<String>,
-    pub expanded: HashSet<(usize, String)>,
+    /// Pins are keyed by (file path, heading), not row index, so a
+    /// membership change that reshuffles the table (see `sync_patterns`)
+    /// can't scramble which rows are expanded.
+    pub expanded: HashSet<(PathBuf, String)>,
     pub mode: Mode,
     pub table_state: TableState,
     pub status: Option<String>,
     pub should_quit: bool,
+    /// Live glob patterns from the command line (see
+    /// `CommonArgs::watch_sources`), re-expanded by `sync_patterns`.
+    patterns: Vec<String>,
     text_filter: TextFilter,
 }
 
@@ -50,14 +61,38 @@ impl App {
     pub fn load(common: &CommonArgs) -> Result<Self> {
         let text_filter = TextFilter::new();
         let mut files = Vec::new();
-        for path in common.materialize_files()? {
-            // Strict on purpose: at startup every path must read cleanly on
-            // the first try — no retries, no hiding. (Contrast `reload`,
-            // where a vanished file is a normal event, not an error.)
-            let text = fs::read_to_string(&path)?;
-            let document = build_document(&text_filter, &text);
-            files.push(LoadedFile { path, document: Some(document) });
+        let mut patterns = Vec::new();
+        // Strict on purpose: at startup every resolved path must read
+        // cleanly on the first try — no retries, no hiding. (Contrast
+        // `reload`, where a vanished file is a normal event, not an error.)
+        for source in common.watch_sources()? {
+            match source {
+                WatchSource::Literal(paths) => {
+                    for path in paths {
+                        let text = fs::read_to_string(&path)?;
+                        let document = build_document(&text_filter, &text);
+                        files.push(LoadedFile {
+                            path,
+                            document: Some(document),
+                            from_pattern: false,
+                        });
+                    }
+                }
+                WatchSource::Pattern(pattern) => {
+                    for path in expand_pattern(&pattern) {
+                        let text = fs::read_to_string(&path)?;
+                        let document = build_document(&text_filter, &text);
+                        files.push(LoadedFile {
+                            path,
+                            document: Some(document),
+                            from_pattern: true,
+                        });
+                    }
+                    patterns.push(pattern);
+                }
+            }
         }
+        files.sort_by(|a, b| a.path.cmp(&b.path));
 
         let mut table_state = TableState::default();
         if !files.is_empty() {
@@ -72,12 +107,27 @@ impl App {
             table_state,
             status: None,
             should_quit: false,
+            patterns,
             text_filter,
         })
     }
 
     pub fn watched_paths(&self) -> impl Iterator<Item = &Path> {
         self.files.iter().map(|f| f.path.as_path())
+    }
+
+    /// Directories to watch beyond the parents of the current files: the
+    /// literal prefix of each live pattern. Without this, a pattern that
+    /// matches nothing at startup watches nothing, and files matching it
+    /// later would appear (via `sync_patterns`) but never live-refresh
+    /// their content. Prefixes that don't exist yet can't be watched and
+    /// are skipped.
+    pub fn pattern_dirs(&self) -> Vec<PathBuf> {
+        self.patterns
+            .iter()
+            .map(|p| pattern_base_dir(p))
+            .filter_map(|d| fs::canonicalize(d).ok())
+            .collect()
     }
 
     /// Re-reads and re-counts a single file in place. Called when the
@@ -97,6 +147,56 @@ impl App {
         file.document = read_with_retries(&file.path)
             .ok()
             .map(|text| build_document(&self.text_filter, &text));
+    }
+
+    /// Re-expand the live glob patterns and reconcile the file set with
+    /// the result: newly matching files are added, pattern-matched files
+    /// that no longer match are dropped. Literal-arg files are never
+    /// touched — they hide via `reload` instead. Called once per event-
+    /// loop tick (it early-returns when there are no patterns, and a
+    /// re-expansion is just a directory scan), which makes membership
+    /// self-healing without depending on which exact events arrive.
+    /// Returns true when the set changed, so the caller can update the
+    /// watcher's tracked paths.
+    pub fn sync_patterns(&mut self) -> bool {
+        if self.patterns.is_empty() {
+            return false;
+        }
+
+        let mut matched = HashSet::new();
+        for pattern in &self.patterns {
+            matched.extend(expand_pattern(pattern));
+        }
+
+        let before = self.files.len();
+        self.files
+            .retain(|f| !f.from_pattern || matched.contains(&f.path));
+        let mut changed = self.files.len() != before;
+
+        for path in matched {
+            if self.files.iter().any(|f| f.path == path) {
+                // Already tracked. A file present but unreadable (document
+                // is None) is deliberately NOT retried here — that would
+                // burn the retry sleeps every tick on a permanently
+                // unreadable file. Its recovery is event-driven, via
+                // `reload`, same as any other tracked file.
+                continue;
+            }
+            let document = read_with_retries(&path)
+                .ok()
+                .map(|text| build_document(&self.text_filter, &text));
+            self.files.push(LoadedFile {
+                path,
+                document,
+                from_pattern: true,
+            });
+            changed = true;
+        }
+
+        if changed {
+            self.files.sort_by(|a, b| a.path.cmp(&b.path));
+        }
+        changed
     }
 
     /// The currently visible rows: a filtered subtree if `filter` matches
@@ -120,13 +220,13 @@ impl App {
     fn collect_rows(&mut self) -> Vec<RowData> {
         if let Some(filter) = self.filter.clone() {
             let needle = filter.to_ascii_uppercase();
-            for (i, file) in self.files.iter().enumerate() {
+            for file in &self.files {
                 let Some(document) = &file.document else {
                     continue;
                 };
                 if let Some(found) = document.get_heading(&needle) {
                     self.status = None;
-                    return flatten(i, found);
+                    return flatten(&file.path, found);
                 }
             }
             self.status = Some(format!(
@@ -138,11 +238,10 @@ impl App {
 
         self.files
             .iter()
-            .enumerate()
-            .flat_map(|(i, f)| {
+            .flat_map(|f| {
                 f.document
                     .as_ref()
-                    .map(|document| flatten(i, document))
+                    .map(|document| flatten(&f.path, document))
                     .unwrap_or_default()
             })
             .collect()
@@ -186,19 +285,19 @@ impl App {
 
     pub fn expand_selected(&mut self, rows: &[RowData]) {
         if let Some(row) = self.selected_row(rows) {
-            self.expanded.insert((row.file_index, row.heading.clone()));
+            self.expanded.insert((row.path.clone(), row.heading.clone()));
         }
     }
 
     pub fn collapse_selected(&mut self, rows: &[RowData]) {
         if let Some(row) = self.selected_row(rows) {
-            self.expanded.remove(&(row.file_index, row.heading.clone()));
+            self.expanded.remove(&(row.path.clone(), row.heading.clone()));
         }
     }
 
     pub fn toggle_selected(&mut self, rows: &[RowData]) {
         if let Some(row) = self.selected_row(rows) {
-            let key = (row.file_index, row.heading.clone());
+            let key = (row.path.clone(), row.heading.clone());
             if !self.expanded.remove(&key) {
                 self.expanded.insert(key);
             }
@@ -235,11 +334,11 @@ impl App {
     }
 }
 
-fn flatten(file_index: usize, document: &Document) -> Vec<RowData> {
+fn flatten(path: &Path, document: &Document) -> Vec<RowData> {
     document
         .iter()
         .map(|stats| RowData {
-            file_index,
+            path: path.to_path_buf(),
             heading: stats.heading().unwrap_or_default().to_string(),
             level: stats.level(),
             paragraphs: stats.paragraphs(),
@@ -338,24 +437,36 @@ mod tests {
         assert_eq!(page_up(3, 5, 10), (0, 2));
     }
 
+    fn test_app(files: Vec<LoadedFile>, patterns: Vec<String>) -> App {
+        let mut table_state = TableState::default();
+        table_state.select(Some(0));
+        App {
+            files,
+            filter: None,
+            expanded: HashSet::new(),
+            mode: Mode::Normal,
+            table_state,
+            status: None,
+            should_quit: false,
+            patterns,
+            text_filter: TextFilter::new(),
+        }
+    }
+
     fn app_with_file(dir: &tempfile::TempDir, name: &str, text: &str) -> (App, PathBuf) {
         let path = dir.path().join(name);
         fs::write(&path, text).unwrap();
         let text_filter = TextFilter::new();
         let document = build_document(&text_filter, &fs::read_to_string(&path).unwrap());
-        let mut table_state = TableState::default();
-        table_state.select(Some(0));
         (
-            App {
-                files: vec![LoadedFile { path: path.clone(), document: Some(document) }],
-                filter: None,
-                expanded: HashSet::new(),
-                mode: Mode::Normal,
-                table_state,
-                status: None,
-                should_quit: false,
-                text_filter,
-            },
+            test_app(
+                vec![LoadedFile {
+                    path: path.clone(),
+                    document: Some(document),
+                    from_pattern: false,
+                }],
+                Vec::new(),
+            ),
             path,
         )
     }
@@ -400,5 +511,106 @@ mod tests {
         let rows = app.rows();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].paragraphs.total, 4);
+    }
+
+    /// An app watching a (canonicalized) `*.md` pattern over `dir`, with no
+    /// files resolved yet — the zero-match startup case.
+    fn app_with_pattern(dir: &tempfile::TempDir) -> (App, PathBuf) {
+        let base = dir.path().canonicalize().unwrap();
+        let pattern = base.join("*.md").to_string_lossy().into_owned();
+        (test_app(Vec::new(), vec![pattern]), base)
+    }
+
+    #[test]
+    fn sync_patterns_picks_up_new_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, base) = app_with_pattern(&dir);
+        assert!(app.rows().is_empty());
+
+        fs::write(base.join("ch1.md"), "# One\n\nalpha beta\n").unwrap();
+        assert!(app.sync_patterns());
+        let rows = app.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].paragraphs.total, 2);
+
+        fs::write(base.join("ch2.md"), "# Two\n\ngamma delta epsilon\n").unwrap();
+        assert!(app.sync_patterns());
+        assert_eq!(app.rows().len(), 2);
+
+        // A steady state: no membership change, sync reports nothing.
+        assert!(!app.sync_patterns());
+    }
+
+    #[test]
+    fn sync_patterns_drops_files_that_stop_matching() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, base) = app_with_pattern(&dir);
+        fs::write(base.join("ch1.md"), "# One\n\nalpha\n").unwrap();
+        fs::write(base.join("ch2.md"), "# Two\n\nbeta\n").unwrap();
+        app.sync_patterns();
+        assert_eq!(app.files.len(), 2);
+
+        fs::remove_file(base.join("ch1.md")).unwrap();
+        assert!(app.sync_patterns());
+
+        assert_eq!(app.files.len(), 1);
+        assert_eq!(app.files[0].path.file_name().unwrap(), "ch2.md");
+        let rows = app.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].heading, "Two");
+    }
+
+    #[test]
+    fn sync_patterns_never_drops_literal_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let path = base.join("ch1.md");
+        fs::write(&path, "# One\n\nalpha beta\n").unwrap();
+        let text_filter = TextFilter::new();
+        let document = build_document(&text_filter, &fs::read_to_string(&path).unwrap());
+        let mut app = test_app(
+            vec![LoadedFile {
+                path: path.clone(),
+                document: Some(document),
+                from_pattern: false,
+            }],
+            vec![base.join("*.md").to_string_lossy().into_owned()],
+        );
+
+        // The literal file is also matched by the pattern — no duplicate
+        // is added, and the existing entry stays literal.
+        assert!(!app.sync_patterns());
+        assert_eq!(app.files.len(), 1);
+        assert!(!app.files[0].from_pattern);
+
+        // When it vanishes, sync leaves it alone (hiding is reload's job),
+        // even though the pattern no longer matches it.
+        fs::remove_file(&path).unwrap();
+        assert!(!app.sync_patterns());
+        assert_eq!(app.files.len(), 1);
+    }
+
+    #[test]
+    fn pins_survive_membership_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, base) = app_with_pattern(&dir);
+        fs::write(base.join("b.md"), "# Bee\n\nalpha beta\n").unwrap();
+        app.sync_patterns();
+
+        let rows = app.rows();
+        app.toggle_selected(&rows);
+        assert_eq!(app.expanded.len(), 1);
+
+        // A new file that sorts BEFORE the pinned one shifts every row
+        // index; the pin (keyed by path, not index) must not move.
+        fs::write(base.join("a.md"), "# Aye\n\ngamma\n").unwrap();
+        app.sync_patterns();
+
+        let rows = app.rows();
+        assert_eq!(rows[0].heading, "Aye");
+        assert_eq!(rows[1].heading, "Bee");
+        assert!(app
+            .expanded
+            .contains(&(base.join("b.md"), "Bee".to_string())));
     }
 }

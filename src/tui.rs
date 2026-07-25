@@ -25,10 +25,14 @@ const POLL_INTERVAL: Duration = Duration::from_millis(150);
 pub fn run(common: &CommonArgs) -> Result<()> {
     let mut app = App::load(common)?;
     let paths: Vec<_> = app.watched_paths().map(|p| p.to_path_buf()).collect();
-    let watcher = Watch::new(paths.iter().map(|p| p.as_path()))?;
+    let dirs = app.pattern_dirs();
+    let mut watcher = Watch::new(
+        paths.iter().map(|p| p.as_path()),
+        dirs.iter().map(|p| p.as_path()),
+    )?;
 
     let mut terminal = init_terminal()?;
-    let outcome = event_loop(&mut terminal, &mut app, &watcher);
+    let outcome = event_loop(&mut terminal, &mut app, &mut watcher);
     restore_terminal()?;
     outcome
 }
@@ -64,7 +68,7 @@ fn page_size(area: Size) -> usize {
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
-    watcher: &Watch,
+    watcher: &mut Watch,
 ) -> Result<()> {
     loop {
         let rows = app.rows();
@@ -81,6 +85,9 @@ fn event_loop(
 
         for path in watcher.changed() {
             app.reload(&path);
+        }
+        if app.sync_patterns() {
+            watcher.set_tracked(app.watched_paths().map(|p| p.to_path_buf()));
         }
 
         if app.should_quit {

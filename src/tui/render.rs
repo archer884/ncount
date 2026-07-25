@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
         Some(i) == selected
             || app
                 .expanded
-                .contains(&(row.file_index, row.heading.clone()))
+                .contains(&(row.path.clone(), row.heading.clone()))
     });
 
     let mut running = 0u32;
@@ -46,7 +46,7 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
             running += row.paragraphs.total;
             let pinned = app
                 .expanded
-                .contains(&(row.file_index, row.heading.clone()));
+                .contains(&(row.path.clone(), row.heading.clone()));
             let verbose = Some(i) == selected || pinned;
             build_row(row, running, verbose, pinned, show_detail)
         })

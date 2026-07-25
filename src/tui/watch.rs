@@ -19,17 +19,28 @@ pub struct Watch {
 }
 
 impl Watch {
-    pub fn new<'a>(paths: impl Iterator<Item = &'a Path>) -> Result<Self> {
+    /// `paths` are the tracked files; their parent directories are watched.
+    /// `extra_dirs` are additional directories to watch (the literal
+    /// prefixes of live glob patterns — needed so a pattern that matches
+    /// nothing yet still sees its first match arrive).
+    pub fn new<'a>(
+        paths: impl Iterator<Item = &'a Path>,
+        extra_dirs: impl Iterator<Item = &'a Path>,
+    ) -> Result<Self> {
         let tracked: HashSet<PathBuf> = paths.map(Path::to_path_buf).collect();
 
         let (tx, rx) = mpsc::channel();
         let mut debouncer = new_debouncer(DEBOUNCE, tx)?;
 
-        let dirs: HashSet<&Path> = tracked.iter().filter_map(|p| p.parent()).collect();
+        let mut dirs: HashSet<PathBuf> = tracked
+            .iter()
+            .filter_map(|p| p.parent().map(Path::to_path_buf))
+            .collect();
+        dirs.extend(extra_dirs.map(Path::to_path_buf));
         for dir in dirs {
             debouncer
                 .watcher()
-                .watch(dir, RecursiveMode::NonRecursive)?;
+                .watch(&dir, RecursiveMode::NonRecursive)?;
         }
 
         Ok(Self {
@@ -37,6 +48,13 @@ impl Watch {
             rx,
             _debouncer: debouncer,
         })
+    }
+
+    /// Replace the tracked file set after the app's membership changes (a
+    /// live glob pattern gained or lost files), so `changed` reports
+    /// events for exactly the current files.
+    pub fn set_tracked(&mut self, paths: impl Iterator<Item = PathBuf>) {
+        self.tracked = paths.collect();
     }
 
     /// Paths, among the ones we're tracking, that changed since the last

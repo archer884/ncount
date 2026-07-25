@@ -159,7 +159,48 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   watched). Events are filtered down to the tracked path set and delivered
   through a plain `mpsc::Receiver<DebounceEventResult>` (the crate has a
   builtin `DebounceEventHandler` impl for `mpsc::Sender`, so no manual
-  callback/channel plumbing was needed).
+  callback/channel plumbing was needed). The tracked set is replaceable
+  (`set_tracked`) because live glob patterns change membership (below),
+  and the watched dirs additionally include each pattern's literal prefix
+  (`cli::pattern_base_dir`) so a pattern matching nothing at startup still
+  sees its first match arrive.
+- **Live glob patterns** (added 2026-07-24): `ncount -w 'src/chapter.*'`
+  — *quoted*, so the pattern survives to argv. An unquoted glob is
+  expanded by the shell before exec and its membership is frozen forever;
+  the program fundamentally cannot distinguish those args from hand-typed
+  paths, so the user-facing rule is "in watch mode, quote your globs."
+  `cli.rs` gained a watch-mode-only partition,
+  `CommonArgs::watch_sources()`, applying the same literal-vs-glob test as
+  `materialize_files` (path exists → literal, else → glob) but returning
+  globs unexpanded as `WatchSource::Pattern`s.   `materialize_files` itself
+  is deliberately untouched: run-once behavior, zero-match error
+  included, must not change (explicit user instruction).   One thing
+  `expand_pattern` does NOT mirror... actually no longer anything: both
+  it and `materialize_files` absolutize the pattern before calling
+  globwalk, because with `max_depth(1)` a relative pattern containing a
+  directory component (`src/chapter.*`) matches nothing at all — the
+  depth budget is spent before the walk reaches the matches (bare `*.md`
+  and absolute patterns are unaffected). Surfaced 2026-07-24 as "quoted
+  globs don't work in fish" — fish was passing the pattern through
+  correctly; the bug was shell-independent and covered by zero tests
+  because every test/fixture had used absolute patterns. Fixed in
+  watch mode's `expand_pattern` first, then in `materialize_files` the
+  same day once the user ruled the run-once instance a regression;
+  zero-match handling in run-once (still an error) deliberately
+  unchanged. The TUI
+  re-expands patterns once per event-loop tick (`App::sync_patterns`,
+  which early-returns when there are no patterns): newly matching files
+  are added, no-longer-matching pattern files drop out of the set
+  entirely, literal-arg files are never dropped (they hide via `reload`
+  as before). A pattern may match zero files at startup — the
+  files-must-exist-at-startup rule is relaxed for pattern args only, per
+  user. Per-tick re-expansion (rather than reacting to specific event
+  kinds) keeps membership self-healing regardless of event ordering; cost
+  is one directory scan per pattern per 150ms tick, trivial next to the
+  per-tick redraw. Known edge: a pattern whose literal prefix dir doesn't
+  exist yet can't be watched — it still gains files via sync, but their
+  content won't live-refresh (no events) until restart. Directory args
+  are *not* live (resolved once at startup); only glob patterns are.
 - **Filtering** mirrors the CLI's fallback exactly: try `get_heading()`
   against each file's `Document` in order, first match wins; no match shows
   a status-line warning (in-app equivalent of the CLI's stderr warning) and
@@ -180,9 +221,10 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   because `Table` gets automatic column-width alignment for free (same as
   `prettytable` does today), at the cost of the reveal not literally
   growing/animating one row in place — it widens the whole table instead.
-  Expand-state and selection are keyed by `(file_index, heading text)`, not
-  row index, so a live refresh that changes row count doesn't scramble
-  which rows are expanded.
+  Expand-state is keyed by `(file path, heading text)`, not row index
+  (selection is a row index, clamped by `rows()`), so a membership change
+  that reshuffles the table — a pattern gaining or losing files — doesn't
+  scramble which rows are expanded.
 - **Navigation**: `j`/`k`/`↑`/`↓` move the `ratatui::widgets::TableState`
   selection (which drives scroll-into-view automatically — no hand-rolled
   scroll math). `PgUp`/`PgDn` scroll the viewport by one page *without*
@@ -203,7 +245,15 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   driving the compiled binary through a real pty (Python + `pyte`, since no
   tmux/screen was available in this environment) — confirmed clean
   `\x1b[?1049l\x1b[?25h` (leave-alt-screen + show-cursor) in the raw output
-  tail after `q`, and exit code 0 after both `q` and Ctrl-C.
+  tail after `q`, and exit code 0 after both `q` and Ctrl-C. Pty-driver
+  notes for future verification (learned the hard way, 2026-07-24): set
+  the pty winsize or ratatui draws into a 0×0 area; read the pty
+  *continuously* or the 64KB buffer back-pressure stalls the redraw loop;
+  assert against single-token needles because ratatui's diff renderer
+  skips unchanged space cells, splitting multi-word strings across cursor
+  movements; and force a full redraw with a SIGWINCH resize when checking
+  for content that merely *stayed* on screen (diff frames never re-emit
+  unchanged cells).
 - Module layout deliberately mirrors the existing `fmt.rs` + `fmt/heading.rs`
   pattern already in this codebase: `src/tui.rs` (entry point, terminal
   setup/teardown, event loop) + `src/tui/{app,render,watch}.rs`, **not**

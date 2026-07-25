@@ -132,6 +132,25 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   a whole directory. This is what makes watch-mode refresh cheap: a
   file-change event only rebuilds *that* file's `Document`
   (`App::reload`), not the whole tree.
+- **`App::reload` is infallible by design** (fixed 2026-07-24, after a real
+  crash): the watcher fires on *any* event for a tracked path, including a
+  plain delete, and the old `read_to_string()?` propagated straight out of
+  the event loop — so `rm`'ing a watched chapter (or Helix's temp+rename
+  save getting its events split across debounce batches mid-dance) killed
+  the whole TUI with "No such file or directory (os error 2)". Now a failed
+  read is retried after 10ms and again after 75ms (covers the
+  unlink/rename gap of an editor's atomic save; anything still unreadable
+  after that has been gone longer than a save dance, and the directory
+  watch fires a fresh event the moment the path exists again — inotify *is*
+  the recovery mechanism, no polling loop needed). A file still unreadable
+  after the retries just drops out of the table — rows vanish, no status
+  message, per explicit user instruction: a missing file is not an error,
+  same as a glob not matching under `watch ncount src/*` — and reappears
+  when a later reload succeeds. `LoadedFile.document` is an `Option` for
+  exactly this reason, and `rows()` clamps the selection so it can't dangle
+  past a table that shrank under it. `App::load` (startup) is deliberately
+  the opposite: strict, first try, no retries, no hiding — every path must
+  read cleanly or the program exits.
 - **`tui/watch.rs`** watches the *parent directories* of resolved files
   (not the exact file paths) via `notify-debouncer-mini`, 300ms debounce —
   required because editors save via write-temp-then-rename (confirmed with

@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use ratatui::widgets::TableState;
 
@@ -11,7 +13,10 @@ use crate::Result;
 
 pub struct LoadedFile {
     pub path: PathBuf,
-    pub document: Document,
+    /// `None` while the file can't be read (deleted, or momentarily absent
+    /// mid-save): the file drops out of the table until a reload succeeds.
+    /// See `App::reload`.
+    pub document: Option<Document>,
 }
 
 pub enum Mode {
@@ -46,8 +51,12 @@ impl App {
         let text_filter = TextFilter::new();
         let mut files = Vec::new();
         for path in common.materialize_files()? {
-            let document = build_document(&text_filter, &path)?;
-            files.push(LoadedFile { path, document });
+            // Strict on purpose: at startup every path must read cleanly on
+            // the first try — no retries, no hiding. (Contrast `reload`,
+            // where a vanished file is a normal event, not an error.)
+            let text = fs::read_to_string(&path)?;
+            let document = build_document(&text_filter, &text);
+            files.push(LoadedFile { path, document: Some(document) });
         }
 
         let mut table_state = TableState::default();
@@ -74,21 +83,48 @@ impl App {
     /// Re-reads and re-counts a single file in place. Called when the
     /// watcher reports that file changed; every other file's `Document` is
     /// left untouched.
-    pub fn reload(&mut self, path: &Path) -> Result<()> {
-        if let Some(file) = self.files.iter_mut().find(|f| f.path == path) {
-            file.document = build_document(&self.text_filter, &file.path)?;
-        }
-        Ok(())
+    ///
+    /// Never fails: a file that can't be read right now (editors replace
+    /// files via unlink/rename dances that leave the path momentarily
+    /// absent, or it was deleted outright) simply drops out of the table —
+    /// same as a glob not matching it under `watch ncount src/*`. It comes
+    /// back on its own when the watcher reports it again and a reload
+    /// succeeds.
+    pub fn reload(&mut self, path: &Path) {
+        let Some(file) = self.files.iter_mut().find(|f| f.path == path) else {
+            return;
+        };
+        file.document = read_with_retries(&file.path)
+            .ok()
+            .map(|text| build_document(&self.text_filter, &text));
     }
 
     /// The currently visible rows: a filtered subtree if `filter` matches
     /// something, otherwise every file chained in order. Mirrors the CLI's
     /// `StatFmt::apply_filter` fallback, including the "no match" warning.
+    /// Files that currently can't be read (see `reload`) contribute no rows.
     pub fn rows(&mut self) -> Vec<RowData> {
+        let rows = self.collect_rows();
+
+        // Rows can shrink out from under the selection when a file drops
+        // out of the table; don't leave the cursor pointing into the void.
+        if let Some(i) = self.table_state.selected() {
+            if i >= rows.len() {
+                self.table_state.select(rows.len().checked_sub(1));
+            }
+        }
+
+        rows
+    }
+
+    fn collect_rows(&mut self) -> Vec<RowData> {
         if let Some(filter) = self.filter.clone() {
             let needle = filter.to_ascii_uppercase();
             for (i, file) in self.files.iter().enumerate() {
-                if let Some(found) = file.document.get_heading(&needle) {
+                let Some(document) = &file.document else {
+                    continue;
+                };
+                if let Some(found) = document.get_heading(&needle) {
                     self.status = None;
                     return flatten(i, found);
                 }
@@ -103,7 +139,12 @@ impl App {
         self.files
             .iter()
             .enumerate()
-            .flat_map(|(i, f)| flatten(i, &f.document))
+            .flat_map(|(i, f)| {
+                f.document
+                    .as_ref()
+                    .map(|document| flatten(i, document))
+                    .unwrap_or_default()
+            })
             .collect()
     }
 
@@ -206,11 +247,29 @@ fn flatten(file_index: usize, document: &Document) -> Vec<RowData> {
         .collect()
 }
 
-fn build_document(filter: &TextFilter, path: &Path) -> Result<Document> {
-    let text = fs::read_to_string(path)?;
+fn build_document(filter: &TextFilter, text: &str) -> Document {
     let mut builder = DocumentBuilder::new();
-    builder.apply(filter.lex(&text));
-    Ok(builder.finalize())
+    builder.apply(filter.lex(text));
+    builder.finalize()
+}
+
+/// Delays before re-trying a failed read: once almost immediately (covers
+/// the unlink/rename gap of an editor's atomic save), then once more after
+/// a longer pause. Anything still unreadable after that has been gone for
+/// longer than a save dance — no point polling further, since the
+/// directory watch fires a fresh event the moment the path exists again.
+const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(10), Duration::from_millis(75)];
+
+fn read_with_retries(path: &Path) -> io::Result<String> {
+    let mut result = fs::read_to_string(path);
+    for delay in RETRY_DELAYS {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(delay);
+        result = fs::read_to_string(path);
+    }
+    result
 }
 
 /// Scroll the viewport down one page while keeping the cursor on the same
@@ -277,5 +336,69 @@ mod tests {
     fn page_up_clamps_at_the_top() {
         // offset 3 -> 0; cursor screen row 2 preserved (5 -> 2).
         assert_eq!(page_up(3, 5, 10), (0, 2));
+    }
+
+    fn app_with_file(dir: &tempfile::TempDir, name: &str, text: &str) -> (App, PathBuf) {
+        let path = dir.path().join(name);
+        fs::write(&path, text).unwrap();
+        let text_filter = TextFilter::new();
+        let document = build_document(&text_filter, &fs::read_to_string(&path).unwrap());
+        let mut table_state = TableState::default();
+        table_state.select(Some(0));
+        (
+            App {
+                files: vec![LoadedFile { path: path.clone(), document: Some(document) }],
+                filter: None,
+                expanded: HashSet::new(),
+                mode: Mode::Normal,
+                table_state,
+                status: None,
+                should_quit: false,
+                text_filter,
+            },
+            path,
+        )
+    }
+
+    #[test]
+    fn reload_picks_up_new_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, path) = app_with_file(&dir, "ch1.md", "# One\n\nalpha beta gamma\n");
+
+        fs::write(&path, "# One\n\nalpha beta gamma delta epsilon\n").unwrap();
+        app.reload(&path);
+
+        let rows = app.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].paragraphs.total, 5);
+    }
+
+    #[test]
+    fn reload_hides_a_file_that_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, path) = app_with_file(&dir, "ch1.md", "# One\n\nalpha beta\n");
+
+        fs::remove_file(&path).unwrap();
+        app.reload(&path);
+
+        assert!(app.files[0].document.is_none());
+        assert!(app.rows().is_empty());
+        // ...and the selection doesn't dangle past the now-empty table.
+        assert_eq!(app.table_state.selected(), None);
+    }
+
+    #[test]
+    fn reload_brings_a_returned_file_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, path) = app_with_file(&dir, "ch1.md", "# One\n\nalpha\n");
+
+        fs::remove_file(&path).unwrap();
+        app.reload(&path);
+        fs::write(&path, "# One\n\nalpha beta gamma delta\n").unwrap();
+        app.reload(&path);
+
+        let rows = app.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].paragraphs.total, 4);
     }
 }

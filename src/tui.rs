@@ -80,7 +80,7 @@ fn event_loop(
         }
 
         for path in watcher.changed() {
-            app.reload(&path)?;
+            app.reload(&path);
         }
 
         if app.should_quit {

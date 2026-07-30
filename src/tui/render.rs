@@ -25,7 +25,7 @@ fn num_cell(top: u32, detail: Option<(&str, u32)>, dim: bool) -> Cell<'static> {
     let top_line = Line::from(top.to_string()).right_aligned();
     match detail {
         Some((glyph, value)) => {
-            let bottom = dimmed(Line::from(format!("{glyph}{value}")).right_aligned(), dim);
+            let bottom = dimmed(Line::from(format!("{glyph} {value}")).right_aligned(), dim);
             Cell::from(Text::from(vec![top_line, bottom]))
         }
         None => Cell::from(top_line),
@@ -79,7 +79,7 @@ fn build_row(row: &RowData, running_total: u32, selected: bool, pinned: bool) ->
     // ¶count rides on line 2 of the heading cell, right-aligned so it tucks
     // against the Words column — the "empty column" beneath the heading.
     let heading_cell = if verbose {
-        let p_count = dimmed(Line::from(format!("¶{}", row.paragraphs.count)).right_aligned(), dim);
+        let p_count = dimmed(Line::from(format!("¶ {}", row.paragraphs.count)).right_aligned(), dim);
         Cell::from(Text::from(vec![heading_line, p_count]))
     } else {
         Cell::from(heading_line)

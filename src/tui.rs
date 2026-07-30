@@ -59,8 +59,11 @@ fn restore_terminal() -> Result<()> {
     Ok(())
 }
 
-/// Visible data rows: full height minus the footer (1) and the table
-/// header (1). Drives how far a PgUp/PgDn jump moves the selection.
+/// Visible terminal lines for data: full height minus the footer (1) and the
+/// table header (1). Treated as a *line* budget by `app::page_down`/`page_up`,
+/// which walk per-row heights (1 normally, 2 for the selected/pinned row that
+/// draws a detail line) so a page jump lands on a full page even with 2-line
+/// rows in view.
 fn page_size(area: Size) -> usize {
     area.height.saturating_sub(2).max(1) as usize
 }
@@ -113,8 +116,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent, rows: &[RowData], page_size: 
         KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
         KeyCode::Char('j') | KeyCode::Down => app.select_next(rows.len()),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev(),
-        KeyCode::PageDown => app.select_page_down(page_size, rows.len()),
-        KeyCode::PageUp => app.select_page_up(page_size),
+        KeyCode::PageDown => app.select_page_down(page_size, rows),
+        KeyCode::PageUp => app.select_page_up(page_size, rows),
         KeyCode::Char('v') | KeyCode::Char(' ') => app.toggle_selected(rows),
         KeyCode::Right => app.expand_selected(rows),
         KeyCode::Left => app.collapse_selected(rows),

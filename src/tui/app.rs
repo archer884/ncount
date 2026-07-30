@@ -267,20 +267,53 @@ impl App {
         self.table_state.select(Some(prev));
     }
 
-    pub fn select_page_down(&mut self, page_size: usize, row_count: usize) {
+    pub fn select_page_down(&mut self, page_lines: usize, rows: &[RowData]) {
+        if rows.is_empty() || page_lines == 0 {
+            return;
+        }
         let offset = self.table_state.offset();
         let selected = self.table_state.selected().unwrap_or(offset);
-        let (new_offset, new_selected) = page_down(offset, selected, page_size, row_count);
+        let heights = self.heights(rows);
+        let (new_offset, new_selected) = page_down(&heights, offset, selected, page_lines);
         *self.table_state.offset_mut() = new_offset;
         self.table_state.select(Some(new_selected));
     }
 
-    pub fn select_page_up(&mut self, page_size: usize) {
+    pub fn select_page_up(&mut self, page_lines: usize, rows: &[RowData]) {
+        if rows.is_empty() || page_lines == 0 {
+            return;
+        }
         let offset = self.table_state.offset();
         let selected = self.table_state.selected().unwrap_or(offset);
-        let (new_offset, new_selected) = page_up(offset, selected, page_size);
+        let heights = self.heights(rows);
+        let (new_offset, new_selected) = page_up(&heights, offset, selected, page_lines);
         *self.table_state.offset_mut() = new_offset;
         self.table_state.select(Some(new_selected));
+    }
+
+    /// Terminal-line height of each row for paging. Only **pinned** rows count
+    /// as 2 lines — the selected row's extra detail line is deliberately *not*
+    /// counted, because the selection moves on every PgUp/PgDn and counting it
+    /// would make the height map change under each move. That change is what
+    /// made paging drift a notch per cycle (forward paid for the 2-line top,
+    /// backward didn't). A pinned set is stable across moves, so the pager
+    /// becomes an exact inverse of itself and drift disappears. With no pins
+    /// (the usual case) this is a flat all-1 map — the classic row-for-row
+    /// page. The selected row still *renders* 2 lines tall either way; only the
+    /// paging math ignores its extra line.
+    fn heights(&self, rows: &[RowData]) -> Vec<usize> {
+        rows.iter()
+            .map(|row| {
+                if self
+                    .expanded
+                    .contains(&(row.path.clone(), row.heading.clone()))
+                {
+                    2
+                } else {
+                    1
+                }
+            })
+            .collect()
     }
 
     pub fn expand_selected(&mut self, rows: &[RowData]) {
@@ -371,70 +404,200 @@ fn read_with_retries(path: &Path) -> io::Result<String> {
     result
 }
 
-/// Scroll the viewport down one page while keeping the cursor on the same
-/// screen row. Returns the new `(offset, selected)`. The viewport scrolls
-/// until its last page is full (`max_offset = row_count - page_size`); at
-/// the bottom the cursor clamps onto the final rows.
-fn page_down(offset: usize, selected: usize, page_size: usize, row_count: usize) -> (usize, usize) {
-    if row_count == 0 || page_size == 0 {
+/// Scroll the viewport down one page (of terminal lines) while keeping the
+/// cursor on the same screen line. Returns the new `(offset, selected)`.
+///
+/// `heights[i]` is the terminal-line height of row `i` (1 normally, 2 when
+/// it's the selected or pinned row, since those draw a detail line). This
+/// matters because the viewport is sized in *lines*, not rows: a page with a
+/// 2-line row in it holds one fewer row than its line budget suggests, so the
+/// old row-count math drifted by ~1 per expanded row. The viewport scrolls
+/// until its last page is full; at the bottom the cursor clamps on.
+fn page_down(heights: &[usize], offset: usize, selected: usize, page_lines: usize) -> (usize, usize) {
+    let row_count = heights.len();
+    if row_count == 0 || page_lines == 0 {
         return (offset, selected);
     }
-    let screen_pos = selected.saturating_sub(offset);
-    let max_offset = row_count.saturating_sub(page_size);
-    let new_offset = (offset + page_size).min(max_offset);
-    let new_selected = (new_offset + screen_pos).min(row_count - 1);
+    let screen_lines = lines_between(heights, offset, selected);
+    let max_offset = last_page_top(heights, page_lines);
+    let new_offset = advance_forward(heights, offset, page_lines).min(max_offset);
+    let new_selected = row_at_line(heights, new_offset, screen_lines).min(row_count - 1);
     (new_offset, new_selected)
 }
 
-/// Scroll the viewport up one page while keeping the cursor on the same
-/// screen row. Returns the new `(offset, selected)`.
-fn page_up(offset: usize, selected: usize, page_size: usize) -> (usize, usize) {
-    if page_size == 0 {
+/// Scroll the viewport up one page (of terminal lines) keeping the cursor on
+/// the same screen line.
+fn page_up(heights: &[usize], offset: usize, selected: usize, page_lines: usize) -> (usize, usize) {
+    let row_count = heights.len();
+    if row_count == 0 || page_lines == 0 {
         return (offset, selected);
     }
-    let screen_pos = selected.saturating_sub(offset);
-    let new_offset = offset.saturating_sub(page_size);
-    (new_offset, new_offset + screen_pos)
+    let screen_lines = lines_between(heights, offset, selected);
+    let new_offset = advance_backward(heights, offset, page_lines);
+    let new_selected = row_at_line(heights, new_offset, screen_lines).min(row_count - 1);
+    (new_offset, new_selected)
+}
+
+/// Terminal lines occupied by rows `[from, to)`.
+fn lines_between(heights: &[usize], from: usize, to: usize) -> usize {
+    heights[from.min(heights.len())..to.min(heights.len())]
+        .iter()
+        .copied()
+        .sum()
+}
+
+/// First row that no longer fully fits within `lines` starting at `from` —
+/// the new viewport top after scrolling down one page. Never less than `from`.
+fn advance_forward(heights: &[usize], from: usize, lines: usize) -> usize {
+    let (mut acc, mut idx) = (0, from);
+    while idx < heights.len() {
+        let h = heights[idx];
+        if acc + h > lines {
+            break;
+        }
+        acc += h;
+        idx += 1;
+    }
+    idx
+}
+
+/// First row such that `[it, from)` fits within `lines` — the new viewport top
+/// after scrolling up one page.
+fn advance_backward(heights: &[usize], from: usize, lines: usize) -> usize {
+    let (mut acc, mut idx) = (0, from);
+    while idx > 0 {
+        let h = heights[idx - 1];
+        if acc + h > lines {
+            break;
+        }
+        acc += h;
+        idx -= 1;
+    }
+    idx
+}
+
+/// Smallest top from which every remaining row fits within `lines`: the last
+/// full page. Scrolling past it would only move the cursor, not the content.
+fn last_page_top(heights: &[usize], lines: usize) -> usize {
+    let (mut acc, mut idx) = (0, heights.len());
+    while idx > 0 {
+        let h = heights[idx - 1];
+        if acc + h > lines {
+            break;
+        }
+        acc += h;
+        idx -= 1;
+    }
+    idx
+}
+
+/// Row containing the `line`-th screen line below `from` (0 = `from` itself).
+fn row_at_line(heights: &[usize], from: usize, line: usize) -> usize {
+    let (mut acc, mut idx) = (0, from);
+    while idx < heights.len() {
+        let h = heights[idx];
+        if acc + h > line {
+            break;
+        }
+        acc += h;
+        idx += 1;
+    }
+    idx.min(heights.len().saturating_sub(1))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn flat(n: usize) -> Vec<usize> {
+        vec![1; n]
+    }
+
     #[test]
-    fn page_down_keeps_cursor_on_same_screen_row() {
-        // viewport of 10, cursor at screen row 3 -> page lands at offset 10,
-        // cursor still on screen row 3 (now item 13).
-        assert_eq!(page_down(0, 3, 10, 50), (10, 13));
+    fn page_down_keeps_cursor_on_same_screen_line() {
+        // viewport of 10 lines, cursor at screen line 3 -> page lands at
+        // offset 10, cursor still on screen line 3 (now item 13).
+        assert_eq!(page_down(&flat(50), 0, 3, 10), (10, 13));
     }
 
     #[test]
     fn page_down_clamps_at_the_bottom() {
         // last full page already in view (max_offset = 40): no movement.
-        assert_eq!(page_down(40, 43, 10, 50), (40, 43));
+        assert_eq!(page_down(&flat(50), 40, 43, 10), (40, 43));
     }
 
     #[test]
-    fn page_down_near_bottom_scroll_fully_but_keep_screen_row() {
-        // offset 35 -> clamps to 40; cursor screen row 3 preserved (38 -> 43).
-        assert_eq!(page_down(35, 38, 10, 50), (40, 43));
+    fn page_down_near_bottom_scroll_fully_but_keep_screen_line() {
+        // offset 35 -> clamps to 40; cursor screen line 3 preserved (38 -> 43).
+        assert_eq!(page_down(&flat(50), 35, 38, 10), (40, 43));
     }
 
     #[test]
     fn page_down_is_a_noop_when_everything_fits() {
         // fewer rows than a viewport: max_offset is 0, so nothing scrolls.
-        assert_eq!(page_down(0, 2, 10, 5), (0, 2));
+        assert_eq!(page_down(&flat(5), 0, 2, 10), (0, 2));
     }
 
     #[test]
-    fn page_up_keeps_cursor_on_same_screen_row() {
-        assert_eq!(page_up(20, 23, 10), (10, 13));
+    fn page_up_keeps_cursor_on_same_screen_line() {
+        assert_eq!(page_up(&flat(50), 20, 23, 10), (10, 13));
     }
 
     #[test]
     fn page_up_clamps_at_the_top() {
-        // offset 3 -> 0; cursor screen row 2 preserved (5 -> 2).
-        assert_eq!(page_up(3, 5, 10), (0, 2));
+        // offset 3 -> 0; cursor screen line 2 preserved (5 -> 2).
+        assert_eq!(page_up(&flat(50), 3, 5, 10), (0, 2));
+    }
+
+    #[test]
+    fn page_down_advances_less_when_top_row_is_pinned() {
+        // A pinned row at the top is 2 lines tall, so the 10-line viewport
+        // holds rows 0..8 (2 + 8*1 = 10) with row 9 spilling -> the next page
+        // top is row 9, not 10. Cursor sits at screen line 0 and follows.
+        let mut h = flat(50);
+        h[0] = 2;
+        assert_eq!(page_down(&h, 0, 0, 10), (9, 9));
+    }
+
+    #[test]
+    fn page_down_consumes_extra_line_of_a_pinned_row() {
+        // A pinned 2-line row mid-page (idx 5) makes a 10-line page hold one
+        // fewer row: new top is row 9 (not 10), cursor on screen line 3 lands
+        // at 12 (not 13). Contrast the flat-list (10, 13) above.
+        let mut h = flat(50);
+        h[5] = 2;
+        assert_eq!(page_down(&h, 0, 3, 10), (9, 12));
+    }
+
+    #[test]
+    fn page_up_consumes_extra_line_of_a_pinned_row() {
+        // Symmetric: paging up across a 2-line row (idx 15) lands one row
+        // lower than the flat (10, 13) case.
+        let mut h = flat(50);
+        h[15] = 2;
+        assert_eq!(page_up(&h, 20, 23, 10), (11, 14));
+    }
+
+    #[test]
+    fn heights_ignores_the_selected_row_and_counts_only_pins() {
+        // The selected row renders 2 lines tall but the pager must treat it as
+        // 1 — otherwise the height map changes on every move and PgUp/PgDn
+        // drift a notch per cycle. Only pinned rows count as 2.
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, _path) = app_with_file(
+            &dir,
+            "ch.md",
+            "# A\n\na b c\n\n# B\n\nd e f\n\n# C\n\ng h i\n",
+        );
+        let rows = app.rows();
+        assert_eq!(rows.len(), 3);
+        // Row 0 is selected, nothing pinned -> all rows height 1.
+        assert_eq!(app.heights(&rows), vec![1, 1, 1]);
+
+        // Pin row 1 (not the selected one): only it becomes height 2.
+        app.expanded
+            .insert((rows[1].path.clone(), rows[1].heading.clone()));
+        assert_eq!(app.heights(&rows), vec![1, 2, 1]);
     }
 
     fn test_app(files: Vec<LoadedFile>, patterns: Vec<String>) -> App {

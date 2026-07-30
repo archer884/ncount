@@ -212,30 +212,47 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   per explicit instruction. Every row starts collapsed (Words/Total only).
   `v` **toggles** the selected row (expand if collapsed, collapse if
   expanded); `→`/`←` expand/collapse it directionally (so `→` on an
-  already-expanded row is a no-op, unlike `v`). `render.rs` checks whether
-  *any* currently-visible row is expanded and swaps between a 3-column
-  (`§ Words Total`) and 6-column (`§ Count¶ Avg¶ Long¶ Words Total`) `Table`
-  + header for the whole frame — the Count¶/Avg¶/Long¶ header labels only
-  exist on screen when something is actually revealed, not as blank columns
-  sitting there unused. Chosen over a hand-rolled variable-height list
-  because `Table` gets automatic column-width alignment for free (same as
-  `prettytable` does today), at the cost of the reveal not literally
-  growing/animating one row in place — it widens the whole table instead.
-  Expand-state is keyed by `(file path, heading text)`, not row index
-  (selection is a row index, clamped by `rows()`), so a membership change
-  that reshuffles the table — a pattern gaining or losing files — doesn't
-  scramble which rows are expanded.
+  already-expanded row is a no-op, unlike `v`). The table is *always*
+  3-column (`§ Words Total`) — the header never changes — and an expanded
+  (selected or pinned) row simply grows to **two lines**. The detail values
+  share the numeric cells so the numbers stack as they grow: `⟂{avg}`
+  right-aligned beneath Words, `▸{max}` beneath Total, and `¶{count}`
+  tucked into the right edge of the heading cell (the "empty column"
+  between the title and Words). The selected row's detail matches the row's
+  own intensity; a pinned-but-unselected row's detail is drawn dim so it
+  recedes. This is the inversion of an earlier design (swapped the whole
+  frame between 3- and 6-column tables on any expand) whose stated drawback
+  was "the reveal widens the whole table instead of growing one row in
+  place, and the heading column loses ~21 chars to Count¶/Avg¶/Long¶."
+  Growing the row in place fixes both: the reveal is local, and the
+  heading column keeps the full width in every state. Expand-state is keyed
+  by `(file path, heading text)`, not row index (selection is a row index,
+  clamped by `rows()`), so a membership change that reshuffles the table
+  — a pattern gaining or losing files — doesn't scramble which rows are
+  expanded. (ratatui's `Row` height defaults to 1 and truncates extra cell
+  lines rather than auto-deriving from cell content, so the 2-line cells
+  only render when `Row::height(2)` is set explicitly.)
 - **Navigation**: `j`/`k`/`↑`/`↓` move the `ratatui::widgets::TableState`
   selection (which drives scroll-into-view automatically — no hand-rolled
   scroll math). `PgUp`/`PgDn` scroll the viewport by one page *without*
-  moving the cursor off its screen row: the offset advances by one page
-  and the selection is re-placed at the same on-screen position
+  moving the cursor off its screen **line**: the offset advances by one
+  page and the selection is re-placed at the same on-screen line
   (`app.rs::page_down`/`page_up`, page size from `tui.rs::page_size`,
   recomputed per keypress from the terminal height minus the footer and
-  the table header). This relies on ratatui's `Table` only re-deriving the
-  offset when the selection leaves the viewport, so a manually-set offset
-  with a visible selection is left intact. `q`/`Esc`/`Ctrl-C` quit.
-  Ctrl-C needed explicit handling since raw mode intercepts the signal
+  the table header). Paging is **line-accurate, not row-accurate**: the
+  pager walks a per-row height map to land on a full page and keep the
+  cursor on its screen line. Crucially that map counts only **pinned**
+  rows as 2 lines — *not* the selected row. Counting the selected row
+  (whose 2-line detail is the usual case) made the map change on every
+  move, and since forward paid for the 2-line top but backward didn't,
+  PgUp/PgDn drifted a notch per cycle. A pinned set is stable across
+  moves, so the pager is an exact inverse of itself and drift disappears;
+  with no pins (the usual case) it's a flat all-1 map. The selected row
+  still *renders* 2 lines tall — only the paging math ignores its extra
+  line. This relies on ratatui's `Table` only re-deriving the offset when
+  the selection leaves the viewport, so a manually-set offset with a
+  visible selection is left intact. `q`/`Esc`/`Ctrl-C` quit. Ctrl-C
+  needed explicit handling since raw mode intercepts the signal
   (crossterm never delivers a SIGINT in raw mode — it arrives as a normal
   key event with `KeyModifiers::CONTROL`).
 - **Terminal safety**: a panic hook (installed in `tui::mod`'s

@@ -14,20 +14,264 @@ smaller canned sample for quick checks.
 
 ## Pipeline (main.rs)
 
-1. `cli::Args` — clap-parsed paths/glob patterns, `--filter`, `--verbose`.
-   `materialize_files()` resolves paths/globs to files and **sorts** them,
+`cli::Args` flattens a single `CommonArgs`, which carries `paths`,
+`--filter`/`-f`, `--verbose`/`-v`, and `--watch`/`-w`. The `-w/--watch`
+flag selects between the two entry points: absent → `run_once` (classic
+one-shot table, below); present → `tui::run` (see "TUI" section below).
+(Dropping the earlier `tui` subcommand also retired the clap-disambiguation
+spike it needed — a literal `tui` first token vs. the `paths: Vec<String>`
+positional — since there's no subcommand to disambiguate anymore.)
+
+`run_once` (classic one-shot mode, `main.rs`):
+
+1. `materialize_files()` resolves paths/globs to files and **sorts** them,
    because non-Windows readdir order is inode order, not name order.
-2. `filter::TextFilter` — one compiled regex strips comments/footnotes from
-   each file's raw text before anything else sees it.
-3. `document::DocumentBuilder` — walks the filtered text line by line,
-   building a tree of `Document`s keyed by Markdown heading level (`#`
-   depth). Each leading blank-trimmed non-heading line is a "paragraph";
-   its word count comes from `count_words()`, which fast-paths pure-ASCII
-   lines through a hand-rolled tokenizer and falls back to
-   `unicode_words()` for anything else (see below).
+2. `filter::TextFilter::lex()` — a lexer/bundler pipeline (see below) turns
+   each file's raw text directly into a stream of heading/paragraph events,
+   skipping comments/footnotes/notes as it goes rather than materializing a
+   separate cleaned copy of the text first.
+3. `document::DocumentBuilder::apply()` consumes that event stream and
+   builds a tree of `Document`s keyed by Markdown heading level (`#` depth).
+   Word counts come from `count_words()` (`pub(crate)`, used by both
+   `document.rs` and `filter.rs`), which fast-paths pure-ASCII text through
+   a hand-rolled tokenizer and falls back to `unicode_words()` for anything
+   else (see below).
 4. `fmt::StatFmt` — walks the finished `Document` tree, optionally filters
    to a subtree by heading (case-insensitive prefix match), and renders a
    `prettytable` table to stdout, with a running cumulative word total.
+
+### The lexer/bundler rewrite (`filter.rs`)
+
+Replaced the original design (one regex `replace_all` producing a fully
+materialized cleaned string, then `document.rs` doing `.lines()` +
+per-line heading/word parsing) with a pipeline the user specifically
+designed to avoid a bug they'd hit in an earlier attempt at this: a
+comment/footnote landing in the *middle* of a line must not fragment that
+line into two separate paragraphs. Went through two iterations — the
+second (`Chunks`, current) came from the user directly after seeing the
+first (`Fragments`, a per-line lexer) turn out performance-neutral; both
+are recorded here since the reasoning behind the second design only makes
+sense in contrast to the first.
+
+**Current design — `Chunks` (coarse lexer) + `Lines` (boundary-merging bundler):**
+
+- **`Chunks`** (private iterator in `filter.rs`): walks the raw text via
+  `regex::Regex::find_iter` (scan only, no allocation), yielding the
+  surviving text *between* matches as a single `&str` slice each — unlike
+  a per-line lexer, one chunk can span many real lines; it only splits at
+  a removed span. Cost scales with how many comments/footnotes exist
+  (typically a handful in a whole book), not with line count (thousands).
+- **`Lines`** (private iterator in `filter.rs`): runs ordinary
+  `str::lines()` — a well-optimized std primitive — over the bulk of each
+  chunk, and only does the "hard" work (per the user's own description of
+  what made their earlier attempt tricky) at the two ends of each chunk.
+  That work reduces to one check: does the chunk end with `\n`? If yes,
+  its last line was already cleanly terminated before the next match even
+  started, so the next chunk starts a genuinely new line. If no, the match
+  spliced two textual halves together inline (a comment sitting
+  mid-sentence), so the next chunk's first line gets merged onto this
+  chunk's dangling last line before either is classified or counted. A
+  `pending_mode: LineMode` (`Undecided` / `Heading(CompactString)` /
+  `Paragraph(u32)`) plus a `pending_non_whitespace: bool` carry across
+  chunk boundaries to make that merge possible; every other line within a
+  chunk is unambiguous and gets classified/counted directly.
+- **`DocumentBuilder::apply`** (`document.rs`) unchanged by either
+  iteration — it only ever consumed `LineEvent`s, never cared how they
+  were produced.
+- Skip-blank-line semantics, heading text reassembly through an inline
+  comment, and the zero-word-but-non-blank-line case (`"---"`) all carry
+  over unchanged from the first iteration (see the test list below) —
+  swapping `Fragments` for `Chunks` didn't change any observable behavior,
+  only how cheaply it gets there.
+
+**Validation (repeated for this second iteration, not assumed from the first):**
+all 24 tests (18 original + 6 lexer-specific, unmodified from the first
+iteration) still pass without changes, confirming the rewrite is
+behavior-preserving. Also re-ran the full differential check — old
+(`replace_all`) vs. new (`Chunks`/`Lines`) binaries built side by side via
+`git stash`, diffed over the user's whole real book, every file
+individually, and `resource/sample.md` — byte-identical in every case.
+
+**Performance — better than the first iteration, still not a clear win,
+reported honestly:**
+
+| | original (`replace_all`) | `Fragments` (1st, per-line) | `Chunks` (2nd, per-match) |
+|---|---|---|---|
+| `lex`/`filter` + `apply`, mean of 30 runs | ~2.37ms | ~2.49ms | ~2.43ms |
+
+The second design cut the gap to the original roughly in half (from ~5%
+slower to ~3% slower) by moving the boundary-merge bookkeeping from
+"once per line" (~3,135 times in the real book) to "once per match"
+(a few dozen times) — exactly the mechanism the user predicted. It didn't
+fully close the gap or overtake the original in wall-clock terms; on this
+corpus, `str::lines()` + a plain `starts_with('#')` check per line is
+apparently about as fast as this gets without also restructuring
+word-counting itself. Allocation traffic (measured the same way as the
+first iteration, via a temporary counting `#[global_allocator]`) should
+carry over essentially unchanged from the first design's ~31% reduction
+in total bytes allocated, since `Chunks` still never materializes a
+cleaned copy of the text — not independently re-measured for this second
+iteration, since the mechanism (chunks are slices of the original text,
+same as fragments were) doesn't change that story.
+- `libsw` dependency removed — it was only ever used for the old
+  `filter_text`'s per-call debug timing, which doesn't map cleanly onto a
+  lazy iterator API (there's no single "elapsed time for filtering" moment
+  to log anymore; the work is spread across however many `.next()` calls
+  the caller makes).
+
+## TUI (`src/tui.rs` + `src/tui/`)
+
+`ncount -w <paths> [-f ...]` — an interactive, auto-refreshing
+alternative to the classic one-shot table, built on `ratatui` + `crossterm`
++ `notify`/`notify-debouncer-mini`. Reuses `document.rs`/`filter.rs`
+completely unchanged; `fmt.rs` stays the renderer for the classic path only.
+
+- **One `Document` per resolved file** (`tui/app.rs::App::files`), each
+  built through its own fresh `DocumentBuilder` — confirmed earlier in this
+  session that a builder is safe to use per-file rather than folded across
+  a whole directory. This is what makes watch-mode refresh cheap: a
+  file-change event only rebuilds *that* file's `Document`
+  (`App::reload`), not the whole tree.
+- **`App::reload` is infallible by design** (fixed 2026-07-24, after a real
+  crash): the watcher fires on *any* event for a tracked path, including a
+  plain delete, and the old `read_to_string()?` propagated straight out of
+  the event loop — so `rm`'ing a watched chapter (or Helix's temp+rename
+  save getting its events split across debounce batches mid-dance) killed
+  the whole TUI with "No such file or directory (os error 2)". Now a failed
+  read is retried after 10ms and again after 75ms (covers the
+  unlink/rename gap of an editor's atomic save; anything still unreadable
+  after that has been gone longer than a save dance, and the directory
+  watch fires a fresh event the moment the path exists again — inotify *is*
+  the recovery mechanism, no polling loop needed). A file still unreadable
+  after the retries just drops out of the table — rows vanish, no status
+  message, per explicit user instruction: a missing file is not an error,
+  same as a glob not matching under `watch ncount src/*` — and reappears
+  when a later reload succeeds. `LoadedFile.document` is an `Option` for
+   exactly this reason, and `rows()` clamps the selection so it can't dangle
+   past a table that shrank under it. Since 2026-08-14 the clamped cursor
+   also *snaps back* (fixed after real helix usage: rapid saves
+   occasionally outlast the retries, and the sticky clamp left the
+   selection on whatever row inherited the index when the file came
+   back): when the selected row vanishes because its file hid, `rows()`
+   records its `(path, heading)` in `deferred_selection` — the same
+   keyed-restore mechanism the pinned-exception fold flow uses, located
+   via a `last_rows_keys` snapshot of the previous projection since
+   indices are ambiguous once rows shift — and restores it when the
+   reload succeeds. Explicit navigation during the gap cancels the
+   restore (the navigators already cleared `deferred_selection`); a file
+   that returns with the heading renamed gives up rather than deferring
+   forever; and while the file is gone the cursor rides a clamped
+   surviving row instead of hiding. `App::load` (startup) is deliberately
+   the opposite: strict, first try, no retries, no hiding — every path must
+   read cleanly or the program exits.
+- **`tui/watch.rs`** watches the *parent directories* of resolved files
+  (not the exact file paths) via `notify-debouncer-mini`, 300ms debounce —
+  required because editors save via write-temp-then-rename (confirmed with
+  helix/vim's pattern in a driver test: renaming a new inode over the
+  watched path still fires a debounced event when the directory is
+  watched). Events are filtered down to the tracked path set and delivered
+  through a plain `mpsc::Receiver<DebounceEventResult>` (the crate has a
+  builtin `DebounceEventHandler` impl for `mpsc::Sender`, so no manual
+  callback/channel plumbing was needed). The tracked set is replaceable
+  (`set_tracked`) because live glob patterns change membership (below),
+  and the watched dirs additionally include each pattern's literal prefix
+  (`cli::pattern_base_dir`) so a pattern matching nothing at startup still
+  sees its first match arrive.
+- **Live glob patterns** (added 2026-07-24): `ncount -w 'src/chapter.*'`
+  — *quoted*, so the pattern survives to argv. An unquoted glob is
+  expanded by the shell before exec and its membership is frozen forever;
+  the program fundamentally cannot distinguish those args from hand-typed
+  paths, so the user-facing rule is "in watch mode, quote your globs."
+  `cli.rs` gained a watch-mode-only partition,
+  `CommonArgs::watch_sources()`, applying the same literal-vs-glob test as
+  `materialize_files` (path exists → literal, else → glob) but returning
+  globs unexpanded as `WatchSource::Pattern`s.   `materialize_files` itself
+  is deliberately untouched: run-once behavior, zero-match error
+  included, must not change (explicit user instruction).   One thing
+  `expand_pattern` does NOT mirror... actually no longer anything: both
+  it and `materialize_files` absolutize the pattern before calling
+  globwalk, because with `max_depth(1)` a relative pattern containing a
+  directory component (`src/chapter.*`) matches nothing at all — the
+  depth budget is spent before the walk reaches the matches (bare `*.md`
+  and absolute patterns are unaffected). Surfaced 2026-07-24 as "quoted
+  globs don't work in fish" — fish was passing the pattern through
+  correctly; the bug was shell-independent and covered by zero tests
+  because every test/fixture had used absolute patterns. Fixed in
+  watch mode's `expand_pattern` first, then in `materialize_files` the
+  same day once the user ruled the run-once instance a regression;
+  zero-match handling in run-once (still an error) deliberately
+  unchanged. The TUI
+  re-expands patterns once per event-loop tick (`App::sync_patterns`,
+  which early-returns when there are no patterns): newly matching files
+  are added, no-longer-matching pattern files drop out of the set
+  entirely, literal-arg files are never dropped (they hide via `reload`
+  as before). A pattern may match zero files at startup — the
+  files-must-exist-at-startup rule is relaxed for pattern args only, per
+  user. Per-tick re-expansion (rather than reacting to specific event
+  kinds) keeps membership self-healing regardless of event ordering; cost
+  is one directory scan per pattern per 150ms tick, trivial next to the
+  per-tick redraw. Known edge: a pattern whose literal prefix dir doesn't
+  exist yet can't be watched — it still gains files via sync, but their
+  content won't live-refresh (no events) until restart. Directory args
+  are *not* live (resolved once at startup); only glob patterns are.
+- **Filtering** mirrors the CLI's fallback exactly: try `get_heading()`
+  against each file's `Document` in order, first match wins; no match shows
+  a status-line warning (in-app equivalent of the CLI's stderr warning) and
+  falls back to showing everything. `-f`/`--filter` just seeds the initial
+  value; `f`/`/` opens a live text-input (vim/helix-style) to replace it at
+  runtime, `Enter` applies, `Esc` reverts to whatever was active before.
+- **Tree folding and per-row stats** — the CLI's `-v` is accepted (for
+  `CommonArgs` flag-compatibility) but *ignored* in the TUI, per explicit
+  instruction. The initial view contains only top-level headings. `l`/`→`
+  unfolds the selected section when it has children; `h`/`←` folds it again.
+  Fold state is keyed by `(file path, heading text)`, not row index, so live
+  pattern membership changes cannot scramble it. A folded section's Words
+  value is its whole subtree total; an unfolded section's Words value is only
+  its direct paragraphs, while Total remains the running total over the
+  visible structural rows. `v` toggles the separate pin state. A pinned
+  descendant remains visible as an exception when an ancestor is folded, but
+  does not add a second copy of its words to the running Total. `h`/`←` on an
+  unpinned leaf folds its parent and selects that parent; on a pinned exception
+  it preserves the pinned selection. `l`/`→` on the pinned exception reopens
+  the parent and restores the row. The renderer swaps between compact (`§ Words Total`) and
+  verbose (`§ Count¶ Avg¶ Long¶
+  Words Total`) table headers when any row is selected or pinned. Compact rows
+  use the otherwise-empty detail-column space for their headings; selected and
+  pinned rows retain the normal constrained heading cell.
+- **Navigation**: `j`/`k`/`↑`/`↓` move the `ratatui::widgets::TableState`
+  selection (which drives scroll-into-view automatically — no hand-rolled
+  scroll math). `PgUp`/`PgDn` scroll the viewport by one page *without*
+  moving the cursor off its screen row: the offset advances by one page
+  and the selection is re-placed at the same on-screen position
+  (`app.rs::page_down`/`page_up`, page size from `tui.rs::page_size`,
+  recomputed per keypress from the terminal height minus the footer and
+  the table header). This relies on ratatui's `Table` only re-deriving the
+  offset when the selection leaves the viewport, so a manually-set offset
+  with a visible selection is left intact. `q`/`Esc`/`Ctrl-C` quit.
+  Ctrl-C needed explicit handling since raw mode intercepts the signal
+  (crossterm never delivers a SIGINT in raw mode — it arrives as a normal
+  key event with `KeyModifiers::CONTROL`).
+- **Terminal safety**: a panic hook (installed in `tui::mod`'s
+  `init_terminal`) disables raw mode and leaves the alternate screen before
+  the default panic handler runs — without it, a bug in the TUI leaves the
+  user's shell stuck. Verified end-to-end (not just by reading the code) by
+  driving the compiled binary through a real pty (Python + `pyte`, since no
+  tmux/screen was available in this environment) — confirmed clean
+  `\x1b[?1049l\x1b[?25h` (leave-alt-screen + show-cursor) in the raw output
+  tail after `q`, and exit code 0 after both `q` and Ctrl-C. Pty-driver
+  notes for future verification (learned the hard way, 2026-07-24): set
+  the pty winsize or ratatui draws into a 0×0 area; read the pty
+  *continuously* or the 64KB buffer back-pressure stalls the redraw loop;
+  assert against single-token needles because ratatui's diff renderer
+  skips unchanged space cells, splitting multi-word strings across cursor
+  movements; and force a full redraw with a SIGWINCH resize when checking
+  for content that merely *stayed* on screen (diff frames never re-emit
+  unchanged cells).
+- Module layout deliberately mirrors the existing `fmt.rs` + `fmt/heading.rs`
+  pattern already in this codebase: `src/tui.rs` (entry point, terminal
+  setup/teardown, event loop) + `src/tui/{app,render,watch}.rs`, **not**
+  `src/tui/mod.rs` — this project's explicit preference is no `mod.rs`
+  files (2018-style module paths only).
 
 ## Known issues
 
@@ -128,3 +372,9 @@ Still open (lower priority per user — not yet hit in real usage):
 - Release profile is tuned for a small fast binary (`lto = true`,
   `codegen-units = 1`, `panic = "abort"`) — consistent with the "don't
   break flow state" goal; keep new dependencies lean for the same reason.
+  `ratatui` is added with `default-features = false, features = ["crossterm"]`
+  rather than its default `all-widgets` feature set, for the same reason —
+  only `Table`/`Paragraph` and a crossterm backend are actually used.
+- **No `mod.rs` files, ever** — explicit user preference. A module with
+  submodules is always `name.rs` + `name/*.rs` (2018-style paths), e.g.
+  `fmt.rs` + `fmt/heading.rs`, `tui.rs` + `tui/{app,render,watch}.rs`.

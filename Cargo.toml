@@ -9,9 +9,7 @@ readme = "readme.md"
 homepage = "https://github.com/archer884/ncount"
 repository = "https://github.com/archer884/ncount"
 categories = ["command-line-utilities", "text-processing"]
-description = """
-A word count tool intended to derive useful stats from markdown.
-"""
+description = "A word count tool that derives useful stats from Markdown, ignoring HTML comments and footnotes"
 
 [dependencies]
 clap = { version = "4.6.6", features = ["derive", "wrap_help", "color"] }

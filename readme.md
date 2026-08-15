@@ -2,26 +2,22 @@
 
 ```shell
 ❯ ncount --help
-ncount 0.5.5
-A word count program
+A word count tool that derives useful stats from Markdown, ignoring HTML comments and footnotes
 
-USAGE:
-    ncount.exe [FLAGS] [OPTIONS] [paths]...
+Usage: ncount [OPTIONS] [PATHS]...
 
-FLAGS:
-    -d, --detail     Print detailed document information
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-    -v, --verbose    Print detailed document information (alias for detail)
+Arguments:
+  [PATHS]...  files, directories, or glob patterns
 
-OPTIONS:
-    -f, --filter <heading>    Filter results by heading
-
-ARGS:
-    <paths>...    Paths (or globs) to be read
+Options:
+  -f, --filter <FILTER>  show only one heading's section (case-insensitive prefix match)
+  -v, --verbose          print paragraph count, average, and longest
+  -w, --watch            watch files and launch the interactive TUI
+  -h, --help             Print help
+  -V, --version          Print version
 ```
 
-There is certain information we care in fiction. The number of words, the length of paragraphs, etc. Everything else is just noise. Specifically designed to work on Markdown files, excepting headings and comments from the word count.
+There is certain information we care in fiction. The number of words, the length of paragraphs, etc. Everything else is just noise. Specifically designed to work on Markdown files, treating `<!-- -->` HTML comments and `[^footnotes]` as noise and never counting them.
 
 ## Usage
 
@@ -45,7 +41,7 @@ There is certain information we care in fiction. The number of words, the length
  2.4                             24      42      114    1008   18418
  2.5                             78      31      132    2490   20908
  2.6                             38      38      159    1473   22381
- From the Book of Shadows         8      51      120     412   22793
+ From the Book of Shadows         8      51       120     412   22793
  2.7                             40      56      139    2244   25037
  2.8                             32      49      126    1574   26611
  Chapter III: The Prince
@@ -53,10 +49,10 @@ There is certain information we care in fiction. The number of words, the length
  3.2                             32      39      134    1271   29203
  3.3                              2      49       61      99   29302
  Errata                           3      19       27      57   29359
-                                744      39      159   29359
+                                 744      39      159   29359
 ```
 
-The `--detail`/`--verbose` flag causes paragraph information to be printed, including paragraph count, longest and average length, while the `--filter` flag permits the user to focus only on a given heading and its subheadings. For example:
+The `--verbose` flag causes paragraph information to be printed, including paragraph count, longest and average length, while the `--filter` flag permits the user to focus only on a given heading and its subheadings. For example:
 
 ```shell
 ❯ ncount .\src\ -f "iii:"
@@ -67,8 +63,25 @@ The `--detail`/`--verbose` flag causes paragraph information to be printed, incl
  3.3                          99    2691
 ```
 
+## Watch mode
+
+`ncount -w <paths>` opens an interactive table instead, watching the given files and rebuilding each one the moment you save.
+
+Quote glob patterns so the shell passes them through: `ncount -w 'src/chapter.*'`. A quoted pattern is re-expanded live as files appear and disappear; an unquoted glob is expanded by the shell before `ncount` ever sees it.
+
+| Key | Action |
+| --- | --- |
+| `j` `k` `↑` `↓` | move the selection (mouse wheel too) |
+| `PgDn` `PgUp` | scroll a page |
+| `l` `→` | unfold the selected section |
+| `h` `←` | fold it (on a leaf, folds its parent) |
+| `v` `Space` | pin/unpin — a pinned section stays visible when folded |
+| `f` `/` | filter by heading (`Enter` applies, `Esc` cancels) |
+| `?` | show the shortcut list |
+| `q` `Esc` `Ctrl-C` | quit |
+
 ## To cross-compile for Windows:
 
 ```shell
 $ cargo build --target x86_64-pc-windows-gnu --release
-````
+```

@@ -10,7 +10,7 @@ use crate::Result;
 use crate::error::Error;
 
 #[derive(Debug, Parser)]
-#[command(author, version)]
+#[command(author, version, about)]
 pub struct Args {
     #[command(flatten)]
     pub common: CommonArgs,
@@ -18,18 +18,22 @@ pub struct Args {
 
 #[derive(Debug, clap::Args)]
 pub struct CommonArgs {
-    /// file or directory paths
+    /// files, directories, or glob patterns
     paths: Vec<String>,
 
-    /// filter output by heading
+    /// show only one heading's section (case-insensitive prefix match)
     #[arg(short, long)]
     filter: Option<String>,
 
-    /// print extended information
+    /// print paragraph count, average, and longest
     #[arg(short, long)]
     verbose: bool,
 
     /// watch files and launch the interactive TUI
+    ///
+    /// Quote glob patterns (`ncount -w 'src/*.md'`) so the shell passes
+    /// them through; quoted patterns are re-expanded live as files appear
+    /// and disappear. Press `?` inside the TUI for keybindings.
     #[arg(short, long)]
     watch: bool,
 }

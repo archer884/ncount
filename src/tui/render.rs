@@ -109,7 +109,7 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
     if show_detail {
         render_compact_headings(frame, table_area, app, rows, selected);
     }
-    frame.render_widget(Paragraph::new(footer_text(app, running)), footer_area);
+    render_footer(frame, footer_area, app, running);
 
     if matches!(app.mode, Mode::Help) {
         let area = frame.area();
@@ -209,14 +209,19 @@ fn build_row(
     ])
 }
 
-fn footer_text(app: &App, running_total: u32) -> String {
+fn render_footer(frame: &mut Frame, area: Rect, app: &App, running_total: u32) {
     match &app.mode {
-        Mode::Filter { buffer, .. } => format!("/{buffer}"),
+        Mode::Filter { buffer, .. } => {
+            frame.render_widget(Paragraph::new(format!("/{buffer}")), area);
+        }
         Mode::Normal | Mode::Help => {
             if let Some(status) = &app.status {
-                status.clone()
+                frame.render_widget(Paragraph::new(status.clone()), area);
             } else {
-                format!("{running_total} words  |  ? shortcuts")
+                let [left, right] =
+                    Layout::horizontal([Constraint::Min(0), Constraint::Min(0)]).areas(area);
+                frame.render_widget(Paragraph::new(format!("{running_total} words")), left);
+                frame.render_widget(Paragraph::new("? help").right_aligned(), right);
             }
         }
     }

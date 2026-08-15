@@ -252,7 +252,12 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   (crossterm never delivers a SIGINT in raw mode — it arrives as a normal
   key event with `KeyModifiers::CONTROL`).
 - **Shortcuts dialog** (added 2026-08-14): the footer no longer lists the
-  keybindings (it was too busy) — it just shows `NNN words  |  ? shortcuts`.
+  keybindings (it was too busy) — it shows the word count flush left and
+  `? shortcuts` flush right on opposite ends of the bottom row (since
+  2026-08-15, replacing a `NNN words  |  ? shortcuts` pipe-separated
+  single string; rendered by `render.rs::render_footer`, which splits the
+  footer into two `Min(0)` halves so each end aligns independently —
+  filter input and status messages still render full-width left-aligned).
   `?` opens a centered modal (`Mode::Help` in `app.rs`, rendered by
   `render.rs::render_help`: a `Clear` + bordered `Paragraph` whose lines come
   from `help_lines()`, sized by `help_area` to fit content and clamp to small

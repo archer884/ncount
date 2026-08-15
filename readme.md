@@ -85,3 +85,22 @@ Quote glob patterns so the shell passes them through: `ncount -w 'src/chapter.*'
 ```shell
 $ cargo build --target x86_64-pc-windows-gnu --release
 ```
+
+## Changelog
+
+### 0.7.6 (2026-08-15)
+
+- Interactive TUI with native watch mode (`-w`/`--watch`): a live stats
+  table that rebuilds each file the moment you save it. Foldable heading
+  tree with pinned exceptions, in-app filter input, page scrolling,
+  mouse wheel support, and a `?` shortcuts dialog. Quoted glob patterns
+  re-expand live as files appear and disappear. (Shipped across
+  0.7.4–0.7.6.)
+- Cleaned up and shortened the help text; updated to the 2024 edition
+  and upgraded dependencies.
+
+### 0.7.3 (2026-07-13)
+
+- ASCII fast path for word counting (~2.6x faster end-to-end on a full
+  book), a warning when `--filter` matches no heading, and package
+  upgrades.

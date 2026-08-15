@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "ncount"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "clap",
  "compact_str 0.10.0",

@@ -251,6 +251,13 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   Ctrl-C needed explicit handling since raw mode intercepts the signal
   (crossterm never delivers a SIGINT in raw mode — it arrives as a normal
   key event with `KeyModifiers::CONTROL`).
+- **Shortcuts dialog** (added 2026-08-14): the footer no longer lists the
+  keybindings (it was too busy) — it just shows `NNN words  |  ? shortcuts`.
+  `?` opens a centered modal (`Mode::Help` in `app.rs`, rendered by
+  `render.rs::render_help`: a `Clear` + bordered `Paragraph` whose lines come
+  from `help_lines()`, sized by `help_area` to fit content and clamp to small
+  terminals). Any key press dismisses it — including `q` and Esc, which only
+  quit from `Normal` mode. Verified via the pty/pyte driver approach.
 - **Terminal safety**: a panic hook (installed in `tui::mod`'s
   `init_terminal`) disables raw mode and leaves the alternate screen before
   the default panic handler runs — without it, a bug in the TUI leaves the

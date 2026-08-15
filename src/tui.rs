@@ -10,15 +10,15 @@ use crossterm::event::{
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::{execute, ExecutableCommand};
+use crossterm::{ExecutableCommand, execute};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Rect, Size};
-use ratatui::Terminal;
 
-use crate::cli::CommonArgs;
 use crate::Result;
+use crate::cli::CommonArgs;
 
 use app::{App, Mode, RowData};
 use watch::Watch;
@@ -116,6 +116,9 @@ fn handle_key(app: &mut App, key: KeyEvent, rows: &[RowData], page_size: usize) 
 
     match &app.mode {
         Mode::Filter { .. } => handle_filter_key(app, key),
+        // Any key dismisses the shortcuts dialog — including `q` and Esc,
+        // which would otherwise quit from Normal mode.
+        Mode::Help => app.mode = Mode::Normal,
         Mode::Normal => handle_normal_key(app, key, rows, page_size),
     }
 }
@@ -198,6 +201,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent, rows: &[RowData], page_size: 
         KeyCode::Right | KeyCode::Char('l') => app.expand_selected(rows),
         KeyCode::Left | KeyCode::Char('h') => app.collapse_selected(rows),
         KeyCode::Char('f') | KeyCode::Char('/') => app.enter_filter_mode(),
+        KeyCode::Char('?') => app.mode = Mode::Help,
         _ => {}
     }
 }

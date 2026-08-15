@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
+use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 
 use crate::Result;
 

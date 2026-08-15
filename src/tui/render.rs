@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
-use ratatui::widgets::{Cell, Paragraph, Row, Table};
-use ratatui::Frame;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table};
 
 use crate::document::Paragraphs;
 
@@ -110,6 +110,11 @@ pub fn draw(frame: &mut Frame, app: &mut App, rows: &[RowData]) {
         render_compact_headings(frame, table_area, app, rows, selected);
     }
     frame.render_widget(Paragraph::new(footer_text(app, running)), footer_area);
+
+    if matches!(app.mode, Mode::Help) {
+        let area = frame.area();
+        render_help(frame, area);
+    }
 }
 
 /// The verbose table keeps its numeric columns aligned globally, but compact
@@ -207,16 +212,87 @@ fn build_row(
 fn footer_text(app: &App, running_total: u32) -> String {
     match &app.mode {
         Mode::Filter { buffer, .. } => format!("/{buffer}"),
-        Mode::Normal => {
+        Mode::Normal | Mode::Help => {
             if let Some(status) = &app.status {
                 status.clone()
             } else {
-                format!(
-                    "{running_total} words  |  j/k move  PgUp/PgDn page  v pin  h/l/←/→ fold  click select/fold  rclick pin  wheel move  f // filter  q quit"
-                )
+                format!("{running_total} words  |  ? shortcuts")
             }
         }
     }
+}
+
+const HELP_KEY_WIDTH: usize = 26;
+
+fn help_group(text: &'static str) -> Line<'static> {
+    Line::from(Span::styled(
+        text,
+        Style::new().add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn help_entry(key: &'static str, desc: &'static str) -> Line<'static> {
+    Line::from(vec![
+        Span::from("  "),
+        Span::styled(
+            format!("{key:<HELP_KEY_WIDTH$}"),
+            Style::new().add_modifier(Modifier::BOLD),
+        ),
+        Span::from(desc),
+    ])
+}
+
+/// The shortcuts dialog's lines, as data so `help_area` can measure them
+/// and the whole catalog stays in one place.
+fn help_lines() -> Vec<Line<'static>> {
+    vec![
+        help_group("Moving"),
+        help_entry("j / ↓ / wheel", "move to the next row"),
+        help_entry("k / ↑ / wheel", "move to the previous row"),
+        help_entry("PgDn", "scroll down a page"),
+        help_entry("PgUp", "scroll up a page"),
+        Line::default(),
+        help_group("Folding & pinning"),
+        help_entry("l / →", "unfold the selected section"),
+        help_entry("h / ←", "fold; a leaf folds its parent"),
+        help_entry("click", "select a row; on a parent, fold/unfold"),
+        help_entry(
+            "v / Space / right-click",
+            "pin or unpin the selected section",
+        ),
+        Line::default(),
+        help_group("Filtering"),
+        help_entry("f / /", "filter rows by heading"),
+        help_entry("Enter", "apply the filter"),
+        help_entry("Esc", "cancel the filter"),
+        Line::default(),
+        help_group("General"),
+        help_entry("?", "show this help"),
+        help_entry("q / Esc / Ctrl-C", "quit"),
+    ]
+}
+
+/// A centered rect just big enough for the dialog's content (plus borders),
+/// clamped to the available area so small terminals crop instead of panic.
+fn help_area(area: Rect, lines: &[Line<'_>]) -> Rect {
+    let content_width = lines.iter().map(Line::width).max().unwrap_or(0) as u16;
+    // borders (2) plus one column of right padding so the longest line
+    // doesn't sit flush against the border
+    let width = content_width.saturating_add(3).min(area.width);
+    let height = (lines.len() as u16).saturating_add(2).min(area.height);
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    Rect::new(x, y, width, height)
+}
+
+fn render_help(frame: &mut Frame, area: Rect) {
+    let lines = help_lines();
+    let dialog = help_area(area, &lines);
+    frame.render_widget(Clear, dialog);
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(" Shortcuts ")),
+        dialog,
+    );
 }
 
 #[cfg(test)]
@@ -229,5 +305,28 @@ mod tests {
         let heading = verbose_heading_span_width(width);
         assert_eq!(heading, 42);
         assert_eq!(heading + WORDS_WIDTH + COLUMN_SPACING + TOTAL_WIDTH, width);
+    }
+
+    #[test]
+    fn help_area_fits_content_plus_borders_and_centers() {
+        let lines = help_lines();
+        let content_width = lines.iter().map(Line::width).max().unwrap() as u16;
+
+        let area = Rect::new(0, 0, 200, 60);
+        let dialog = help_area(area, &lines);
+
+        assert_eq!(dialog.width, content_width + 3);
+        assert_eq!(dialog.height, lines.len() as u16 + 2);
+        assert_eq!(dialog.x, (area.width - dialog.width) / 2);
+        assert_eq!(dialog.y, (area.height - dialog.height) / 2);
+    }
+
+    #[test]
+    fn help_area_clamps_to_a_small_terminal() {
+        let lines = help_lines();
+        let area = Rect::new(0, 0, 20, 10);
+        let dialog = help_area(area, &lines);
+
+        assert_eq!(dialog, area);
     }
 }

@@ -6,8 +6,8 @@ use std::{
 use clap::Parser;
 use either::Either;
 
-use crate::error::Error;
 use crate::Result;
+use crate::error::Error;
 
 #[derive(Debug, Parser)]
 #[command(author, version)]

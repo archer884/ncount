@@ -8,8 +8,8 @@ use std::{
 use heading::Heading;
 use owo_colors::OwoColorize;
 use prettytable::{
-    format::{Alignment, TableFormat},
     Cell, Table,
+    format::{Alignment, TableFormat},
 };
 
 use crate::document::{Document, DocumentStats, OverallStats};

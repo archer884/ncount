@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use ratatui::widgets::TableState;
 
-use crate::cli::{expand_pattern, pattern_base_dir, CommonArgs, WatchSource};
+use crate::Result;
+use crate::cli::{CommonArgs, WatchSource, expand_pattern, pattern_base_dir};
 use crate::document::{Document, DocumentBuilder, Paragraphs};
 use crate::filter::TextFilter;
-use crate::Result;
 
 pub struct LoadedFile {
     pub path: PathBuf,
@@ -30,6 +30,8 @@ pub enum Mode {
         buffer: String,
         previous: Option<String>,
     },
+    /// Shortcuts dialog is open. Any key press returns to `Normal`.
+    Help,
 }
 
 /// A single document section, retaining enough tree metadata for folding.
@@ -254,20 +256,20 @@ impl App {
         // same keyed restore the pinned-exception fold flow uses). Fold
         // and collapse flows reposition the selection before `rows()` runs,
         // so their previous key is always present and never defers.
-        if self.deferred_selection.is_none() {
-            if let Some(key) = previous_key {
-                if !rows.iter().any(|row| row_key(row) == key) && !self.file_loaded(&key.0) {
-                    self.deferred_selection = Some(key);
-                }
-            }
+        if self.deferred_selection.is_none()
+            && let Some(key) = previous_key
+            && !rows.iter().any(|row| row_key(row) == key)
+            && !self.file_loaded(&key.0)
+        {
+            self.deferred_selection = Some(key);
         }
 
         // Rows can shrink out from under the selection when a file drops
         // out of the table; don't leave the cursor pointing into the void.
-        if let Some(i) = self.table_state.selected() {
-            if i >= rows.len() {
-                self.table_state.select(rows.len().checked_sub(1));
-            }
+        if let Some(i) = self.table_state.selected()
+            && i >= rows.len()
+        {
+            self.table_state.select(rows.len().checked_sub(1));
         }
 
         self.last_rows_keys = rows.iter().map(row_key).collect();
@@ -397,13 +399,13 @@ impl App {
         }
 
         if let Some(row) = self.selected_row(rows) {
-            if row.pinned_exception {
-                if let Some(parent) = row.parent.clone() {
-                    self.expanded.insert(parent);
-                    self.deferred_selection = Some(row_key(row));
-                    self.table_state.select(None);
-                    return;
-                }
+            if row.pinned_exception
+                && let Some(parent) = row.parent.clone()
+            {
+                self.expanded.insert(parent);
+                self.deferred_selection = Some(row_key(row));
+                self.table_state.select(None);
+                return;
             }
             if row.has_children {
                 self.expanded.insert(row_key(row));

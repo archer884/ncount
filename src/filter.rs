@@ -187,12 +187,12 @@ impl<'a> Iterator for Lines<'a> {
 
             self.absorb(line);
 
-            if !is_last || ends_with_nl {
-                if let Some(event) = self.take_pending() {
-                    return Some(event);
-                }
-                // blank line; keep looping (chunk exhausted or not)
+            if (!is_last || ends_with_nl)
+                && let Some(event) = self.take_pending()
+            {
+                return Some(event);
             }
+            // blank line; keep looping (chunk exhausted or not)
             // else: last line of a chunk that doesn't end in `\n` — it's
             // dangling, so leave it pending and merge with the next chunk.
         }

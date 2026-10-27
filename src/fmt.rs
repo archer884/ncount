@@ -12,7 +12,7 @@ use prettytable::{
     format::{Alignment, TableFormat},
 };
 
-use crate::document::{Document, DocumentStats, OverallStats};
+use crate::document::{Document, DocumentStats, OverallStats, UNTITLED};
 
 #[derive(Debug, Default)]
 pub struct StatFmt {
@@ -64,18 +64,15 @@ impl StatFmt {
     fn add_row(&mut self, table: &mut Table, stats: DocumentStats) {
         let row = table.add_empty_row();
 
-        if let Some(heading) = stats.heading().map(Heading) {
-            let heading = match stats.level() {
-                0 | 1 => Cow::from(heading.to_string()),
-                2 => Cow::from(format!(" {heading}")),
-                3 => Cow::from(format!("  {heading}")),
-                4 => Cow::from(format!("   {heading}")),
-                _ => Cow::from(format!("    {heading}")),
-            };
-            row.add_cell(Cell::new_align(&heading, Alignment::LEFT).style_spec("b"));
-        } else {
-            return;
-        }
+        let heading = Heading(stats.heading().unwrap_or(UNTITLED));
+        let heading = match stats.level() {
+            0 | 1 => Cow::from(heading.to_string()),
+            2 => Cow::from(format!(" {heading}")),
+            3 => Cow::from(format!("  {heading}")),
+            4 => Cow::from(format!("   {heading}")),
+            _ => Cow::from(format!("    {heading}")),
+        };
+        row.add_cell(Cell::new_align(&heading, Alignment::LEFT).style_spec("b"));
 
         if stats.paragraphs().is_zero() {
             return;

@@ -24,6 +24,16 @@ positional — since there's no subcommand to disambiguate anymore.)
 
 `run_once` (classic one-shot mode, `main.rs`):
 
+0. With no paths (or just `-`), the text is read from stdin instead —
+   `noclip v | ncount` for counting a single excerpt. A terminal stdin
+   is an error (`Error::NoInput`) rather than a silent wait for EOF.
+   Text before the first heading (all of it, for a typical excerpt) is
+   reported as an `(untitled)` row (`document::UNTITLED`; `Document::iter`
+   yields a headless document only when it holds paragraphs, so
+   skipped-level placeholders stay hidden). This restored behavior lost in
+   2020's `83c279d` "Make headings non-optional"; the TUI shows the same
+   row as a top-level leaf that never parents the headings after it.
+
 1. `materialize_files()` resolves paths/globs to files and **sorts** them,
    because non-Windows readdir order is inode order, not name order.
 2. `filter::TextFilter::lex()` — a lexer/bundler pipeline (see below) turns

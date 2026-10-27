@@ -6,7 +6,11 @@ mod fmt;
 mod log;
 mod tui;
 
-use std::{fs, process};
+use std::{
+    fs,
+    io::{self, IsTerminal, Read},
+    process,
+};
 
 use cli::{Args, CommonArgs};
 use document::DocumentBuilder;
@@ -35,10 +39,21 @@ fn run_once(args: &CommonArgs) -> Result<()> {
     let filter = TextFilter::new();
     let mut builder = DocumentBuilder::new();
 
-    for file in args.materialize_files()? {
-        tracing::debug!("path: {}", file.display());
-        let text = fs::read_to_string(file)?;
-        builder.apply(filter.lex(&text))
+    if args.reads_stdin() {
+        // Bare `ncount` at a prompt would otherwise sit waiting for EOF.
+        let stdin = io::stdin();
+        if stdin.is_terminal() {
+            return Err(error::Error::NoInput);
+        }
+        let mut text = String::new();
+        stdin.lock().read_to_string(&mut text)?;
+        builder.apply(filter.lex(&text));
+    } else {
+        for file in args.materialize_files()? {
+            tracing::debug!("path: {}", file.display());
+            let text = fs::read_to_string(file)?;
+            builder.apply(filter.lex(&text))
+        }
     }
 
     let mut formatter = StatFmt::new(args.verbose());

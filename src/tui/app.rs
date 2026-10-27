@@ -8,7 +8,7 @@ use ratatui::widgets::TableState;
 
 use crate::Result;
 use crate::cli::{CommonArgs, WatchSource, expand_pattern, pattern_base_dir};
-use crate::document::{Document, DocumentBuilder, Paragraphs};
+use crate::document::{Document, DocumentBuilder, Paragraphs, UNTITLED};
 use crate::filter::TextFilter;
 
 pub struct LoadedFile {
@@ -501,14 +501,7 @@ impl App {
 
 fn flatten_document(path: &Path, document: &Document) -> Vec<RowData> {
     let mut rows = Vec::new();
-    let stats = document.stats();
-    if stats.heading().is_some() {
-        flatten_stats(path, stats, None, &mut rows);
-    } else {
-        for child in stats.children() {
-            flatten_stats(path, child, None, &mut rows);
-        }
-    }
+    flatten_stats(path, document.stats(), None, &mut rows);
     rows
 }
 
@@ -533,6 +526,23 @@ fn flatten_stats(
         });
         Some(key)
     } else {
+        // Headless: the root (text before the first heading) or a
+        // skipped-level placeholder. Only the former ever has paragraphs;
+        // it gets a leaf row of its own but never parents anything, so the
+        // headings after it stay top-level.
+        let paragraphs = stats.paragraphs();
+        if !paragraphs.is_zero() {
+            rows.push(RowData {
+                path: path.to_path_buf(),
+                heading: UNTITLED.to_string(),
+                level: stats.level(),
+                paragraphs,
+                parent: parent.clone(),
+                subtree_paragraphs: paragraphs,
+                has_children: false,
+                pinned_exception: false,
+            });
+        }
         parent
     };
 
@@ -695,6 +705,24 @@ mod tests {
         let rows = app.rows();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].paragraphs.total, 5);
+    }
+
+    #[test]
+    fn text_before_first_heading_gets_an_untitled_top_level_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, _) = app_with_file(
+            &dir,
+            "ch1.md",
+            "preamble words here\n\n# One\n\nalpha beta\n\n## Sub\n\ngamma\n",
+        );
+
+        let rows = app.rows();
+        let headings: Vec<_> = rows.iter().map(|row| row.heading.as_str()).collect();
+        assert_eq!(headings, vec![UNTITLED, "One"]);
+        assert_eq!(rows[0].paragraphs.total, 3);
+        assert_eq!(rows[0].parent, None);
+        assert!(!rows[0].has_children);
+        assert_eq!(rows[1].parent, None);
     }
 
     #[test]

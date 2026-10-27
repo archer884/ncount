@@ -18,7 +18,7 @@ pub struct Args {
 
 #[derive(Debug, clap::Args)]
 pub struct CommonArgs {
-    /// files, directories, or glob patterns
+    /// files, directories, or glob patterns (none, or `-`, reads stdin)
     paths: Vec<String>,
 
     /// show only one heading's section (case-insensitive prefix match)
@@ -115,6 +115,16 @@ impl CommonArgs {
             }
         }
         Ok(sources)
+    }
+
+    /// Run-once reads its text from stdin instead of files when given no
+    /// paths at all, or just `-` (`noclip v | ncount`).
+    pub fn reads_stdin(&self) -> bool {
+        match self.paths.as_slice() {
+            [] => true,
+            [only] => only == "-",
+            _ => false,
+        }
     }
 
     pub fn filter(&self) -> Option<&str> {

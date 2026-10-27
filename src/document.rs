@@ -5,6 +5,10 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::filter::LineEvent;
 
+/// Display label for text that precedes the first heading (or a whole input
+/// with no headings at all, e.g. a single excerpt piped in on stdin).
+pub const UNTITLED: &str = "(untitled)";
+
 #[derive(Clone, Debug)]
 pub struct DocumentBuilder {
     root: Document,
@@ -199,9 +203,13 @@ impl Document {
         self.heading = Some(heading);
     }
 
+    /// Yields every headed document, plus any headless one that actually
+    /// holds paragraphs — in practice only the root, carrying text from
+    /// before the first heading. (The headless placeholders synthesized for
+    /// skipped heading levels never receive paragraphs, so stay hidden.)
     pub fn iter(&'_ self) -> Box<dyn Iterator<Item = DocumentStats<'_>> + '_> {
         let subdocs = self.subdocuments.iter().flat_map(|x| x.iter());
-        if self.heading.is_some() {
+        if self.heading.is_some() || !self.paragraphs.is_zero() {
             Box::new(iter::once(DocumentStats(self)).chain(subdocs))
         } else {
             Box::new(subdocs)
@@ -407,14 +415,33 @@ mod tests {
     }
 
     #[test]
-    fn text_before_first_heading_is_not_visible_in_iter() {
-        // Characterizes current behavior: paragraphs attached to the headless
-        // root document are never yielded by `iter()`, so text preceding the
-        // first heading in a file is silently absent from output and totals.
+    fn text_before_first_heading_is_yielded_as_headless_root() {
+        // Regression (lost in 2020's "Make headings non-optional"): text
+        // preceding the first heading used to vanish from output and totals.
         let doc = build("stray preamble text\n\n# Chapter\n\nreal words");
         let stats: Vec<_> = doc.iter().collect();
+        assert_eq!(stats.len(), 2);
+        assert_eq!(stats[0].heading(), None);
+        assert_eq!(stats[0].paragraphs().total, 3);
+        assert_eq!(stats[1].heading(), Some("Chapter"));
+        assert_eq!(stats[1].paragraphs().total, 2);
+    }
+
+    #[test]
+    fn text_with_no_headings_is_counted() {
+        let doc = build("one two three\n\nfour five");
+        let stats: Vec<_> = doc.iter().collect();
         assert_eq!(stats.len(), 1);
-        assert_eq!(stats[0].paragraphs().total, 2);
+        assert_eq!(stats[0].heading(), None);
+        assert_eq!(stats[0].paragraphs().count, 2);
+        assert_eq!(stats[0].paragraphs().total, 5);
+    }
+
+    #[test]
+    fn skipped_level_placeholders_stay_hidden() {
+        let doc = build("# One\n\n### Three\n\nx");
+        let headings: Vec<_> = doc.iter().map(|s| s.heading().map(str::to_owned)).collect();
+        assert_eq!(headings, vec![Some("One".into()), Some("Three".into())]);
     }
 
     #[test]

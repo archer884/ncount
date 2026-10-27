@@ -11,4 +11,7 @@ pub enum Error {
 
     #[error("file not found: {0}")]
     FileNotFound(PathBuf),
+
+    #[error("no input: pass files, or pipe text on stdin")]
+    NoInput,
 }

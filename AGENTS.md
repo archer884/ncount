@@ -15,9 +15,10 @@ smaller canned sample for quick checks.
 ## Pipeline (main.rs)
 
 `cli::Args` flattens a single `CommonArgs`, which carries `paths`,
-`--filter`/`-f`, `--verbose`/`-v`, and `--watch`/`-w`. The `-w/--watch`
-flag selects between the two entry points: absent → `run_once` (classic
-one-shot table, below); present → `tui::run` (see "TUI" section below).
+`--filter`/`-f`, `--verbose`/`-v`, `--watch`/`-w`, and (with the
+`progress` feature) `--progress`/`-p` and `--days`. `-w` → `tui::run`
+(see "TUI" below); `-p` → `progress::run` (see "Progress chart" below);
+neither → `run_once` (classic one-shot table, below).
 (Dropping the earlier `tui` subcommand also retired the clap-disambiguation
 spike it needed — a literal `tui` first token vs. the `paths: Vec<String>`
 positional — since there's no subcommand to disambiguate anymore.)
@@ -295,6 +296,85 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
   `src/tui/mod.rs` — this project's explicit preference is no `mod.rs`
   files (2018-style module paths only).
 
+## Progress chart (`src/progress.rs` + `src/progress/`, feature `progress`)
+
+`ncount -p <paths> [--days N] [-f ...]`: a *static* chart (printed once,
+not part of the TUI, per user) of net words written per day, read from
+the git history of the repo the paths live in. Added 2026-10-28.
+
+- **Feature-gated, off by default** (`progress = ["dep:gix", "dep:jiff",
+  "dep:globset"]`), to keep the base binary lean: 2.9MB → 4.2MB release,
+  144 → 236 crates. The `-p`/`--days` fields on `CommonArgs` are
+  `#[cfg(feature = "progress")]`, so a build without the feature doesn't
+  advertise them. It's a flag, not a subcommand, to avoid reviving the
+  subcommand-vs-`paths`-positional clash that dropping `tui` retired.
+- **gix, not shelling out to `git`**: chosen by the user for robustness
+  (no dependence on the user's git config, pager, color, or date
+  settings, or on `git` being installed), not speed. Measured beforehand:
+  shelling out would have been ~50–75ms of git work for 110 days. The
+  user ruled out C libraries (so no git2/libgit2); gix with
+  `default-features = false, features = ["sha1"]` has no `cc`/`cmake`/
+  `-sys` crates in its build graph (zlib via pure-Rust `zlib-rs`).
+  `pack-cache-lru-static` was tried and made no measurable difference.
+- **Chart rendering uses ratatui's `Chart` widget** (`GraphType::Bar`,
+  `Marker::Braille` for every dataset), already a dependency, rendered into an
+  off-screen `Buffer` and dumped as text (`chart::to_text`, ANSI only on a
+  TTY). The user preferred an existing charting library over hand-rolled
+  drawing for maintainability. Two ratatui layout facts the code relies
+  on: y labels are padded to a fixed `LABEL_WIDTH` so each day's column is
+  known up front, and ratatui caps the label gutter at a third of the
+  area's width, so `bar_width` enforces `MIN_PLOT_WIDTH` (otherwise a
+  one- or two-day chart truncates labels and shifts every column).
+  Height is a fixed 10 rows (`PLOT_ROWS`), 40 braille dots of
+  resolution. Terminal-height sizing (up to 30 rows) was tried
+  2026-10-28 and dropped by the user: compact is more useful than tall.
+  The vertical scale is always the
+  window's own extremes (best day at the top, deepest cut at the bottom),
+  so heights only compare within one chart.
+  All datasets share one marker on purpose (user's call, 2026-10-28): with
+  half-block bars over a braille zero line, gains started at the middle of
+  the zero row, below the line's dots. Braille cells are two dots wide, so
+  x bounds are in dots (`[0, 2 × plot − 1]`, mapping exactly) and each
+  day fills both dot columns of its cells. A zero-change day gets no bar,
+  only the zero line (`⣀` when zero sits at the bottom).
+- **Day semantics** (`progress/history.rs`): first-parent chain from HEAD,
+  committer dates (amend keeps author date; committer date is when the
+  words landed), local time zone via `jiff::tz::TimeZone::system()`, a
+  4am rollover (`DAY_ROLLOVER`). Each past day is the tree of the first
+  chain commit whose day is ≤ it. Today reads the *working tree*, so
+  uncommitted words count. Days before the first commit are `None`
+  (rendered blank, no zero line). The first day with data is a baseline
+  with no bar. Default sizing trims leading `None` days; an explicit
+  `--days` keeps them. A missing parent (shallow clone) ends the walk
+  quietly.
+- **Membership**: every path argument resolves to (directory, name
+  selector), the same one-level reach as run-once's directory args and
+  `max_depth(1)` globs. The *same* selector is applied to each historical
+  tree and to today's directory listing, so the two can't disagree and
+  fake a jump on today's bar. Literal paths that don't exist any more
+  still match in history (`canonicalize_lenient` keeps them comparable to
+  the canonical workdir). Symlinks are skipped in both (a symlink's blob
+  is its target path). Overlapping args count a file once (run-once
+  doesn't dedupe; deliberate difference).
+- **`-f`** follows the TUI's per-file first-match-wins rule, so counts
+  can be cached per blob. It falls back with the usual warning only when
+  no charted day matches at all.
+- **Caching**: counts per blob ID and tallies per tree ID, so a day whose
+  tree didn't change is free and a commit that touched one chapter
+  re-counts one file. Real book (release): ~20ms for 30 days, ~72ms for
+  110, ~156ms for 400. Instrumented once: about two-thirds is word
+  counting (the existing pipeline over ~11MB of distinct blobs at 110
+  days), about one-third gix object reads. Parallel counting is the
+  remaining lever if it ever matters.
+- **Validated** by a differential against run-once: every one of 400 days
+  (205 distinct commits) of the real book, each compared with plain
+  `ncount` over a `git archive` of `git log --first-parent -1
+  --before='<day+1> 04:00'` (committer date, like the code). Zero
+  mismatches. The `-f 'Chapter IV'` total also matches run-once's filtered
+  table. Tests (`progress/history.rs`) build throwaway repos with the
+  `git` CLI (test-only dependency on `git`), with the global and system
+  config isolated and committer dates pinned.
+
 ## Known issues
 
 Fixed (2026-07-13), since the user confirmed the filter-fallback was the
@@ -399,4 +479,5 @@ Still open (lower priority per user — not yet hit in real usage):
   only `Table`/`Paragraph` and a crossterm backend are actually used.
 - **No `mod.rs` files, ever** — explicit user preference. A module with
   submodules is always `name.rs` + `name/*.rs` (2018-style paths), e.g.
-  `fmt.rs` + `fmt/heading.rs`, `tui.rs` + `tui/{app,render,watch}.rs`.
+  `fmt.rs` + `fmt/heading.rs`, `tui.rs` + `tui/{app,render,watch}.rs`,
+  `progress.rs` + `progress/{history,chart}.rs`.

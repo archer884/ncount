@@ -36,6 +36,16 @@ pub struct CommonArgs {
     /// and disappear. Press `?` inside the TUI for keybindings.
     #[arg(short, long)]
     watch: bool,
+
+    /// chart words written per day, read from the files' git history
+    #[cfg(feature = "progress")]
+    #[arg(short, long, conflicts_with = "watch")]
+    progress: bool,
+
+    /// days to chart (default: as many as fit the terminal, or 30 when piped)
+    #[cfg(feature = "progress")]
+    #[arg(long, requires = "progress", value_parser = clap::value_parser!(u32).range(1..))]
+    days: Option<u32>,
 }
 
 impl Args {
@@ -137,6 +147,21 @@ impl CommonArgs {
 
     pub fn watch(&self) -> bool {
         self.watch
+    }
+
+    #[cfg(feature = "progress")]
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+
+    #[cfg(feature = "progress")]
+    pub fn progress(&self) -> bool {
+        self.progress
+    }
+
+    #[cfg(feature = "progress")]
+    pub fn days(&self) -> Option<u32> {
+        self.days
     }
 }
 
@@ -242,6 +267,10 @@ mod tests {
             filter: None,
             verbose: false,
             watch: false,
+            #[cfg(feature = "progress")]
+            progress: false,
+            #[cfg(feature = "progress")]
+            days: None,
         }
     }
 

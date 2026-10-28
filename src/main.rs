@@ -4,6 +4,8 @@ mod error;
 mod filter;
 mod fmt;
 mod log;
+#[cfg(feature = "progress")]
+mod progress;
 mod tui;
 
 use std::{
@@ -23,10 +25,11 @@ fn main() {
     log::init();
 
     let args = Args::parse();
-    let result = if args.common.watch() {
-        tui::run(&args.common)
-    } else {
-        run_once(&args.common)
+    let result = match () {
+        _ if args.common.watch() => tui::run(&args.common),
+        #[cfg(feature = "progress")]
+        _ if args.common.progress() => progress::run(&args.common),
+        _ => run_once(&args.common),
     };
 
     if let Err(e) = result {

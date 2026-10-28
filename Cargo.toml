@@ -16,7 +16,10 @@ clap = { version = "4.6.6", features = ["derive", "wrap_help", "color"] }
 compact_str = "0.10.0"
 crossterm = "0.29.0"
 either = "1.17.0"
+gix = { version = "0.90.0", default-features = false, features = ["sha1"], optional = true }
+globset = { version = "0.4.20", optional = true }
 globwalk = "0.9.1"
+jiff = { version = "0.2.38", optional = true }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
 owo-colors = "4.3.0"
@@ -27,6 +30,10 @@ thiserror = "2.0.20"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-segmentation = "1.13.3"
+
+[features]
+# `ncount -p`: chart words per day from the manuscript's git history.
+progress = ["dep:gix", "dep:jiff", "dep:globset"]
 
 [dev-dependencies]
 tempfile = "3"

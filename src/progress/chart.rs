@@ -27,6 +27,9 @@ const MAX_BAR_WIDTH: usize = 8;
 const MIN_PLOT_WIDTH: usize = 2 * GUTTER;
 
 const RISE: Color = Color::Cyan;
+/// Gold-star days. Blue against yellow also survives the common
+/// (red-green) color-vision deficiencies.
+const SUCCESS: Color = Color::Yellow;
 const FALL: Color = Color::Red;
 const MUTED: Color = Color::DarkGray;
 
@@ -48,14 +51,18 @@ pub fn bar_width(days: usize, width: usize) -> usize {
 /// datasets as layers that replace each other a whole cell at a time, so a
 /// day with both bars in one chart would lose part of one where they meet.
 /// See `split_rows` for how the rows are shared; each half's extreme
-/// reaches its edge.
-pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
+/// reaches its edge, though the top is never below the goal, so the goal
+/// stays on the chart through a slow week. A day that adds `goal` words or
+/// more is a success: the goal is marked on the y scale, and those days'
+/// bars get their own color.
+pub fn render(start: Date, changes: &[Option<Change>], width: usize, goal: u32) -> Buffer {
     let bar = bar_width(changes.len(), width);
     // Leave a gap between wide bars so neighboring days stay distinct.
     let fill = if bar >= 3 { bar - 1 } else { bar };
     let plot = changes.len() * bar;
 
     let mut added = Vec::new();
+    let mut successes = Vec::new();
     let mut cut = Vec::new();
     for (day, change) in changes.iter().enumerate() {
         let Some(change) = change else { continue };
@@ -65,7 +72,12 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
         // A side with no words gets no bar, just the zero line.
         if change.added > 0 {
             let height = f64::from(change.added);
-            added.extend(dots.clone().map(|dot| (dot as f64, height)));
+            let points = if change.added >= goal {
+                &mut successes
+            } else {
+                &mut added
+            };
+            points.extend(dots.clone().map(|dot| (dot as f64, height)));
         }
         if change.cut > 0 {
             let depth = -f64::from(change.cut);
@@ -83,7 +95,9 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
 
     let most_added = changes.iter().flatten().map(|c| c.added).max().unwrap_or(0);
     let most_cut = changes.iter().flatten().map(|c| c.cut).max().unwrap_or(0);
-    let (upper_rows, lower_rows) = split_rows(most_added, most_cut);
+    // The upper half always reaches the goal, so it's never empty.
+    let top = most_added.max(goal);
+    let (upper_rows, lower_rows) = split_rows(top, most_cut);
 
     let mut x_labels = vec![Line::from(start.strftime("%b %-d").to_string())];
     if plot >= 40 {
@@ -111,14 +125,8 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
     let width = (GUTTER + plot) as u16;
     let mut buffer = Buffer::empty(Rect::new(0, 0, width, PLOT_ROWS + 2));
 
-    // Upper half: the zero line along its bottom edge, gains above. The
-    // bounds need some height even when nothing was added; the labels
-    // still show only real values. (An empty label draws nothing, so it
-    // can't cover the other when a one-row half puts both on one row.)
-    let top_label = match most_added {
-        0 => String::new(),
-        n => label(n.into()),
-    };
+    // Upper half: the zero line along its bottom edge, gains above, up to
+    // the best day or the goal, whichever is higher.
     let upper = Chart::new(vec![
         Dataset::default()
             .marker(Marker::Braille)
@@ -126,6 +134,7 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
             .style(MUTED)
             .data(&zero),
         bars(&added, RISE),
+        bars(&successes, SUCCESS),
     ])
     .x_axis(x_axis(match lower_rows {
         0 => x_labels.clone(),
@@ -134,11 +143,12 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
     .y_axis(
         Axis::default()
             .style(MUTED)
-            .bounds([0.0, f64::from(most_added.max(1))])
-            .labels([label(0), top_label]),
+            .bounds([0.0, f64::from(top)])
+            .labels([label(0), label(top.into())]),
     );
     let axis_rows = if lower_rows == 0 { 2 } else { 0 };
     upper.render(Rect::new(0, 0, width, upper_rows + axis_rows), &mut buffer);
+    mark_goal(&mut buffer, upper_rows, top, goal);
 
     // Lower half: cuts hanging from its top edge, then the x axis.
     if lower_rows > 0 {
@@ -155,12 +165,32 @@ pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
     buffer
 }
 
+/// Mark the goal on the upper half's y scale with a tick and, unless its
+/// row already holds the top or zero label, its own label. Drawn onto the
+/// rendered buffer because ratatui only spaces axis labels evenly.
+fn mark_goal(buffer: &mut Buffer, rows: u16, top: u32, goal: u32) {
+    // The same mapping ratatui's canvas uses: braille, four dots per row.
+    let dots = f64::from(rows * 4 - 1);
+    let dot = (f64::from(top - goal) * dots / f64::from(top)).round() as u16;
+    let row = dot / 4;
+    let style = Style::default().fg(SUCCESS);
+    let gutter = 0..LABEL_WIDTH as u16;
+    // When no day reached the goal, the top label *is* the goal's.
+    if top == goal || gutter.clone().all(|x| buffer[(x, row)].symbol() == " ") {
+        buffer.set_string(0, row, label(goal.into()), style);
+    }
+    buffer[(LABEL_WIDTH as u16, row)]
+        .set_symbol("┤")
+        .set_style(style);
+}
+
 /// Plot rows for (gains, cuts). In proportion to the window's most added
 /// and most cut, so both halves share one scale, except that gains always
 /// keep at least half the chart: a day that purges a whole chapter would
 /// otherwise flatten every drafting day to a sliver. Cuts beyond that are
 /// scaled down to fit. With no gains, the upper half is the zero line's
-/// one row; with no cuts, there's no lower half at all.
+/// one row (`render` passes at least the goal, so it never does); with no
+/// cuts, there's no lower half at all.
 fn split_rows(most_added: u32, most_cut: u32) -> (u16, u16) {
     if most_cut == 0 {
         return (PLOT_ROWS, 0);
@@ -250,7 +280,7 @@ mod tests {
     }
 
     fn plain(changes: &[Option<Change>], width: usize) -> Vec<String> {
-        let buffer = render(date(2026, 3, 1), changes, width);
+        let buffer = render(date(2026, 3, 1), changes, width, 500);
         to_text(&buffer, false)
             .lines()
             .map(str::to_string)
@@ -277,7 +307,7 @@ mod tests {
 
     #[test]
     fn rendered_height_is_rows_plus_axis_and_labels() {
-        let buffer = render(date(2026, 3, 1), &[net(5), net(-5)], 80);
+        let buffer = render(date(2026, 3, 1), &[net(5), net(-5)], 80, 500);
         let lines = to_text(&buffer, false).lines().count();
         assert_eq!(lines, PLOT_ROWS as usize + 2);
     }
@@ -295,11 +325,11 @@ mod tests {
 
     #[test]
     fn renders_one_column_per_day_with_extremes_labeled() {
-        let changes: Vec<_> = (0..20).map(|day| net(day * 10 - 50)).collect();
+        let changes: Vec<_> = (0..20).map(|day| net(day * 100 - 500)).collect();
         let lines = plain(&changes, GUTTER + 20);
 
-        assert!(lines[0].starts_with("  +140"), "{lines:#?}");
-        assert!(lines[9].starts_with("   -50"), "{lines:#?}");
+        assert!(lines[0].starts_with("+1,400"), "{lines:#?}");
+        assert!(lines[9].starts_with("  -500"), "{lines:#?}");
         // The tallest bar is the last day's column; the deepest, the first.
         let column = |line: &str, day: usize| line.chars().nth(GUTTER + day).unwrap();
         assert_ne!(column(&lines[0], 19), ' ', "{lines:#?}");
@@ -329,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_day_without_change_gets_no_bar() {
-        let lines = plain(&[net(10), net(0), net(10)], 80);
+        let lines = plain(&[net(400), net(0), net(400)], 80);
         let bar = bar_width(3, 80);
         let zero_row = &lines[PLOT_ROWS as usize - 1];
         let cell = |day: usize| zero_row.chars().nth(GUTTER + day * bar).unwrap();
@@ -344,22 +374,22 @@ mod tests {
     fn all_zero_days_render_without_panicking() {
         let lines = plain(&[net(0), net(0)], 80);
         assert!(lines.iter().any(|l| l.starts_with("     0")), "{lines:#?}");
-        // No made-up "+1" from the padding that keeps the bounds open.
-        assert!(lines[0].starts_with("      │"), "{lines:#?}");
+        // The scale still reaches the goal.
+        assert!(lines[0].starts_with("  +500┤"), "{lines:#?}");
     }
 
     #[test]
     fn a_single_day_renders() {
-        let lines = plain(&[net(42)], 80);
-        assert!(lines[0].starts_with("   +42│"), "{lines:#?}");
+        let lines = plain(&[net(642)], 80);
+        assert!(lines[0].starts_with("  +642│"), "{lines:#?}");
         assert!(lines.last().unwrap().ends_with("today"), "{lines:#?}");
     }
 
     #[test]
     fn a_day_with_both_draws_both_bars_whole() {
         // Drafted a scene, deleted its beat sheet: one bar each way.
-        let lines = plain(&[both(0, 0), both(400, 400), both(0, 0)], GUTTER + 3);
-        let (upper, _) = split_rows(400, 400);
+        let lines = plain(&[both(0, 0), both(600, 600), both(0, 0)], GUTTER + 3);
+        let (upper, _) = split_rows(600, 600);
         let bar = bar_width(3, GUTTER + 3);
         let column = |row: usize, day: usize| lines[row].chars().nth(GUTTER + day * bar).unwrap();
 
@@ -369,13 +399,13 @@ mod tests {
             assert_eq!(column(row, 1), '⣿', "row {row}: {lines:#?}");
         }
         assert_eq!(column(upper as usize - 1, 0), '⣀', "{lines:#?}");
-        assert!(lines[0].starts_with("  +400"), "{lines:#?}");
+        assert!(lines[0].starts_with("  +600"), "{lines:#?}");
         assert!(
             lines[upper as usize - 1].starts_with("     0"),
             "{lines:#?}"
         );
         assert!(
-            lines[PLOT_ROWS as usize - 1].starts_with("  -400"),
+            lines[PLOT_ROWS as usize - 1].starts_with("  -600"),
             "{lines:#?}"
         );
         assert_eq!(lines.len(), PLOT_ROWS as usize + 2);
@@ -393,13 +423,84 @@ mod tests {
     }
 
     #[test]
-    fn only_cuts_render_with_the_zero_line_on_top() {
+    fn only_cuts_still_leave_room_for_the_goal() {
         let lines = plain(&[net(-30), net(-10)], 80);
-        assert!(lines[0].starts_with("     0│"), "{lines:#?}");
+        let (upper, _) = split_rows(500, 30);
+        assert!(lines[0].starts_with("  +500┤"), "{lines:#?}");
+        assert!(
+            lines[upper as usize - 1].starts_with("     0│"),
+            "{lines:#?}"
+        );
         assert!(
             lines[PLOT_ROWS as usize - 1].starts_with("   -30"),
             "{lines:#?}"
         );
         assert!(lines.last().unwrap().ends_with("today"), "{lines:#?}");
+    }
+
+    #[test]
+    fn the_goal_is_marked_at_its_row_on_the_scale() {
+        let lines = plain(&[net(2000), net(100)], 80);
+        // 500 of 0..=2000, in 40 dots: dot round(1500 * 39 / 2000) = 29.
+        assert!(lines[29 / 4].starts_with("  +500┤"), "{lines:#?}");
+        assert!(lines[0].starts_with("+2,000│"), "{lines:#?}");
+    }
+
+    #[test]
+    fn the_goal_is_marked_on_the_upper_half_alone() {
+        let lines = plain(&[both(2000, 1000)], 80);
+        let (upper, _) = split_rows(2000, 1000);
+        assert_eq!(upper, 7);
+        // 500 of 0..=2000, in 28 dots: dot round(1500 * 27 / 2000) = 20.
+        assert!(lines[20 / 4].starts_with("  +500┤"), "{lines:#?}");
+    }
+
+    #[test]
+    fn the_goal_stays_on_the_chart_when_no_day_reaches_it() {
+        let lines = plain(&[net(100), net(-50)], 80);
+        assert!(lines[0].starts_with("  +500┤"), "{lines:#?}");
+    }
+
+    #[test]
+    fn the_goal_is_configurable() {
+        let buffer = render(date(2026, 3, 1), &[net(1500), net(900)], 80, 1000);
+        let lines: Vec<String> = to_text(&buffer, false)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        // 1000 of 0..=1500, in 40 dots: dot round(500 * 39 / 1500) = 13.
+        assert!(lines[13 / 4].starts_with("+1,000┤"), "{lines:#?}");
+
+        let bar = bar_width(2, 80);
+        let color = |day: usize| buffer[((GUTTER + day * bar) as u16, PLOT_ROWS - 1)].fg;
+        assert_eq!(color(0), SUCCESS);
+        assert_eq!(color(1), RISE);
+    }
+
+    #[test]
+    fn days_reaching_the_goal_get_their_own_color() {
+        let changes = [net(499), net(500), net(1000)];
+        let buffer = render(date(2026, 3, 1), &changes, 80, 500);
+        let bar = bar_width(changes.len(), 80);
+        let zero_row = PLOT_ROWS - 1;
+        let color = |day: usize| buffer[((GUTTER + day * bar) as u16, zero_row)].fg;
+
+        assert_eq!(color(0), RISE);
+        assert_eq!(color(1), SUCCESS);
+        assert_eq!(color(2), SUCCESS);
+    }
+
+    #[test]
+    fn success_counts_words_added_not_net() {
+        // A scene drafted over its beat sheet: +600 / -400 nets only +200,
+        // but 600 words were written.
+        let changes = [both(600, 400), both(300, 0)];
+        let buffer = render(date(2026, 3, 1), &changes, 80, 500);
+        let (upper, _) = split_rows(600, 400);
+        let bar = bar_width(changes.len(), 80);
+        let color = |day: usize| buffer[((GUTTER + day * bar) as u16, upper - 1)].fg;
+
+        assert_eq!(color(0), SUCCESS);
+        assert_eq!(color(1), RISE);
     }
 }

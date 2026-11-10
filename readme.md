@@ -90,22 +90,23 @@ Built only with the `progress` feature (`cargo install ncount --features progres
 ❯ ncount -p 'src/chapter.*' --days 21 -f 'chapter iv'
 +2,329│       ⣿     ⣤
       │       ⣿     ⣿
-      │  ⣀  ⣤ ⣿⣶    ⣿
-      │  ⣿  ⣿ ⣿⣿    ⣿
+      │  ⣀  ⣤ ⣿⣶    ⣿      ⣶
       │  ⣿  ⣿ ⣿⣿    ⣿      ⣿
+  +500┤  ⣿  ⣿ ⣿⣿    ⣿      ⣿
      0│⣀⣀⣿⣀⣀⣿⣀⣿⣿⣀⣀⣀⣀⣿⣀⣀⣿⣀⣀⣀⣿
       │  ⠉  ⠉ ⣿⣿    ⣿  ⠉   ⣿
-      │       ⣿     ⣿      ⠛
-      │       ⣿
+      │       ⣿     ⣿      ⣿
+      │       ⣿            ⠿
 -1,794│       ⣿
       └─────────────────────
  Oct 20                today
-chapter iv: 25,742 words · +9,495 -3,678 (net +5,817) over 21 days · best day +2,329 (Oct 27)
+chapter iv: 25,721 words · +10,122 -4,326 (net +5,796) over 21 days · 6 days at 500+ · best day +2,329 (Oct 27)
 ```
 
 - Each past day counts the last commit made by its end, following first parents from `HEAD` and using committer dates, so amended commits land on the day they were amended. Days end at 4am, so late-night work belongs to the evening it started.
 - Today reads the working tree, so uncommitted words count.
 - Words added rise above the zero line and words cut hang below it, so a scene drafted while its beat sheet is deleted shows both in full rather than the small difference between them. Edits count word by word (renaming a character costs one word per mention), and paragraphs moved unchanged, within a file or between charted files, count as neither. Days before the history starts are left blank.
+- A day with at least 500 words added counts as a success (`--goal` sets your own threshold), whatever was cut the same day. The goal is marked on the scale, those days' bars are yellow (other gains are cyan), and the summary counts them. The scale always reaches the goal, so the mark stays visible through a slow week.
 - By default the chart fits as many days as the terminal is wide (30 when piped). `--days` picks the window instead.
 - Paths and quoted globs select files the same way they do for the table, applied to every day's tree. A pattern picks up chapters added later, and the path of a file deleted since still counts toward the days it existed. `-f` charts one section (first file with the heading wins, as in watch mode).
 

@@ -17,6 +17,9 @@ use history::{Clock, Day, History};
 
 /// The window when stdout isn't a terminal and `--days` wasn't given.
 const FALLBACK_DAYS: usize = 30;
+/// Words added in a day for it to count as a success, unless `--goal`
+/// says otherwise.
+const DEFAULT_GOAL: u32 = 500;
 
 /// `ncount -p`: a static chart of words added and cut per day, read from the
 /// charted files' git history, with today read from the working tree.
@@ -110,20 +113,31 @@ pub fn run(args: &CommonArgs) -> Result<()> {
         return Ok(());
     }
 
-    let buffer = chart::render(start, &changes, width);
+    let goal = args.goal().unwrap_or(DEFAULT_GOAL);
+    let buffer = chart::render(start, &changes, width, goal);
     write!(out, "{}", chart::to_text(&buffer, terminal.is_some()))?;
 
     let mut total = Change::default();
     for change in changes.iter().flatten() {
         total += *change;
     }
+    let successes = changes
+        .iter()
+        .flatten()
+        .filter(|change| change.added >= goal)
+        .count();
     let mut summary = format!(
-        "{name}{} words · +{} -{} (net {}) over {} days",
+        "{name}{} words · +{} -{} (net {}) over {} days · {} at {}+",
         grouped(now.into()),
         grouped(total.added.into()),
         grouped(total.cut.into()),
         signed(total.net()),
         changes.len(),
+        match successes {
+            1 => "1 day".to_string(),
+            n => format!("{n} days"),
+        },
+        grouped(goal.into()),
     );
     let best = changes
         .iter()

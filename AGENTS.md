@@ -298,7 +298,7 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
 
 ## Progress chart (`src/progress.rs` + `src/progress/`, feature `progress`)
 
-`ncount -p <paths> [--days N] [-f ...]`: a *static* chart (printed once,
+`ncount -p <paths> [--days N] [--goal N] [-f ...]`: a *static* chart (printed once,
 not part of the TUI, per user) of words added and words cut per day, read
 from the git history of the repo the paths live in. Added 2026-10-28;
 switched from net change to both sides 2026-11-09 (see "Added and cut").
@@ -346,6 +346,24 @@ switched from net change to both sides 2026-11-09 (see "Added and cut").
   day fills both dot columns of its cells. A side with no words gets no
   bar, only the zero line (always `⣀`, the bottom dot row of the upper
   half).
+- **Daily goal** (user's spec, 2026-10-28; ported onto added/cut
+  2026-11-10): a day with ≥ `--goal` words *added* (default 500,
+  `progress::DEFAULT_GOAL`: the user's own daily target, made settable for
+  other authors) is a success regardless of what it cut, and the summary
+  line counts them (`· 7 days at 500+`). `--goal` is an `Option` like
+  `--days`, defaulted in `progress::run` rather than via clap, must be
+  ≥ 1, and reaches `chart::render` as a parameter. Its added bar is
+  `SUCCESS` yellow (ordinary gains `RISE` cyan, cuts `FALL` red; yellow
+  vs. blue chosen because it survives red-green color blindness). The goal
+  is marked on the upper half's y scale with a yellow `┤` tick and label
+  (`+500` by default). ratatui only spaces axis labels evenly, so
+  `mark_goal` writes them into the rendered buffer at the row the canvas
+  maps the goal to (same rounding formula as ratatui's braille grid),
+  skipping the label if that row already holds the top or zero label. The
+  upper half's top is `max(most added, goal)`, and that (not the raw most
+  added) is what `split_rows` gets, so the mark is visible even when no
+  day reached it, and a cuts-only window still gives gains half the rows
+  instead of the one-row zero line.
 - **Added and cut** (`progress/diff.rs`, 2026-11-09, the user's idea):
   net change hid drafting, since beat sheets (hundreds of words, in plain
   text) are deleted as their scenes are written. Oct 5 in the real book:

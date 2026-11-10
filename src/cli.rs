@@ -46,6 +46,11 @@ pub struct CommonArgs {
     #[cfg(feature = "progress")]
     #[arg(long, requires = "progress", value_parser = clap::value_parser!(u32).range(1..))]
     days: Option<u32>,
+
+    /// words added in a day to count it a success (default: 500)
+    #[cfg(feature = "progress")]
+    #[arg(long, requires = "progress", value_parser = clap::value_parser!(u32).range(1..))]
+    goal: Option<u32>,
 }
 
 impl Args {
@@ -163,6 +168,11 @@ impl CommonArgs {
     pub fn days(&self) -> Option<u32> {
         self.days
     }
+
+    #[cfg(feature = "progress")]
+    pub fn goal(&self) -> Option<u32> {
+        self.goal
+    }
 }
 
 /// A command-line candidate as watch mode understands it: literal paths
@@ -271,6 +281,8 @@ mod tests {
             progress: false,
             #[cfg(feature = "progress")]
             days: None,
+            #[cfg(feature = "progress")]
+            goal: None,
         }
     }
 

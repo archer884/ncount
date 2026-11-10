@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 use std::{fs, io, thread};
 
@@ -10,9 +11,10 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ToSpan};
 
 use crate::Result;
-use crate::document::DocumentBuilder;
 use crate::error::Error;
 use crate::filter::TextFilter;
+
+use super::diff::{Change, Text, Version, diff};
 
 /// Work done after midnight belongs to the evening's session: a commit at
 /// 1:30am counts toward the day before.
@@ -65,17 +67,19 @@ pub struct Tally {
 }
 
 impl Tally {
-    fn add(&mut self, file: FileCount) {
+    fn add(&mut self, file: &Version) {
         self.files += 1;
         self.words += file.words;
-        self.section = self.section.or(file.section);
+        self.section = self.section.or_else(|| file.section_words());
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct FileCount {
-    words: u32,
-    section: Option<u32>,
+/// The charted files as of one day: each file's version, in path order,
+/// and their totals.
+#[derive(Clone, Debug)]
+pub struct Day {
+    files: Rc<[ObjectId]>,
+    pub tally: Tally,
 }
 
 /// Which entries of a directory a path argument selects.
@@ -97,7 +101,7 @@ impl Name {
 }
 
 /// The charted files' history: path arguments resolved against one git
-/// repository, plus caches so each tree and blob is counted at most once.
+/// repository, plus caches so each tree and blob is read at most once.
 pub struct History {
     repo: gix::Repository,
     workdir: PathBuf,
@@ -110,8 +114,10 @@ pub struct History {
     lexer: TextFilter,
     /// `--filter`, uppercased the way `Document::get_heading` expects
     heading: Option<String>,
-    blobs: HashMap<ObjectId, FileCount>,
-    trees: HashMap<ObjectId, Tally>,
+    /// Every file version seen, by blob ID (the working tree's files too,
+    /// hashed the way git would).
+    versions: HashMap<ObjectId, Version>,
+    trees: HashMap<ObjectId, Day>,
 }
 
 impl History {
@@ -152,7 +158,7 @@ impl History {
             dirs,
             lexer: TextFilter::new(),
             heading: heading.map(|h| h.to_ascii_uppercase()),
-            blobs: HashMap::new(),
+            versions: HashMap::new(),
             trees: HashMap::new(),
         })
     }
@@ -161,26 +167,57 @@ impl History {
     /// day is the tree of the last commit made on or before it (first-parent
     /// history from HEAD, by committer date); days before the first commit
     /// have none. Today reads the working tree, so uncommitted words count.
-    pub fn daily(&mut self, clock: &Clock, first: Date, today: Date) -> Result<Vec<Option<Tally>>> {
+    pub fn daily(&mut self, clock: &Clock, first: Date, today: Date) -> Result<Vec<Option<Day>>> {
         let chain = self.first_parent_chain(clock, first)?;
-        let mut tallies = Vec::new();
-        for day in first.series(1.day()).take_while(|&day| day < today) {
-            let tree = chain.iter().find(|(d, _)| *d <= day).map(|&(_, tree)| tree);
-            let tally = match tree {
-                Some(tree) => Some(self.tally_tree(tree)?),
+        let mut days = Vec::new();
+        for date in first.series(1.day()).take_while(|&date| date < today) {
+            let tree = chain
+                .iter()
+                .find(|(d, _)| *d <= date)
+                .map(|&(_, tree)| tree);
+            let day = match tree {
+                Some(tree) => Some(self.read_tree(tree)?),
                 None => None,
             };
-            tracing::debug!(%day, ?tally);
-            tallies.push(tally);
+            tracing::debug!(%date, tally = ?day.as_ref().map(|day| day.tally));
+            days.push(day);
         }
-        tallies.push(Some(self.tally_worktree()?));
+        days.push(Some(self.read_worktree()?));
         tracing::debug!(
             commits = chain.len(),
             trees = self.trees.len(),
-            blobs = self.blobs.len(),
+            versions = self.versions.len(),
             "history read"
         );
-        Ok(tallies)
+        Ok(days)
+    }
+
+    /// Words added and cut from one day to the next: across all the charted
+    /// files, read in path order as one text, or only in the `--filter`
+    /// section when `section` is set.
+    pub fn change(&self, before: &Day, after: &Day, section: bool) -> Change {
+        if before.files == after.files {
+            return Change::default();
+        }
+        let paragraphs = |day: &Day| -> Vec<&Text> {
+            let mut files = day.files.iter().map(|id| &self.versions[id]);
+            match section {
+                true => files
+                    .find_map(Version::section)
+                    .map(|section| section.iter().collect())
+                    .unwrap_or_default(),
+                false => files.flat_map(|file| file.paragraphs()).collect(),
+            }
+        };
+        let change = diff(&paragraphs(before), &paragraphs(after));
+        debug_assert_eq!(change.net(), {
+            let words = |tally: Tally| match section {
+                true => tally.section.unwrap_or(0),
+                false => tally.words,
+            };
+            i64::from(words(after.tally)) - i64::from(words(before.tally))
+        });
+        change
     }
 
     /// `(day, tree)` for each commit from HEAD back along first parents,
@@ -212,16 +249,32 @@ impl History {
         Ok(chain)
     }
 
-    fn tally_tree(&mut self, tree: ObjectId) -> Result<Tally> {
-        if let Some(tally) = self.trees.get(&tree) {
-            return Ok(*tally);
+    fn read_tree(&mut self, tree: ObjectId) -> Result<Day> {
+        if let Some(day) = self.trees.get(&tree) {
+            return Ok(day.clone());
         }
-        let mut tally = Tally::default();
+        let mut files = Vec::new();
         for (_, blob) in self.tree_files(tree)? {
-            tally.add(self.count_blob(blob)?);
+            if !self.versions.contains_key(&blob) {
+                let data = self.repo.find_blob(blob).map_err(git)?.take_data();
+                self.versions.insert(blob, self.version(&data));
+            }
+            files.push(blob);
         }
-        self.trees.insert(tree, tally);
-        Ok(tally)
+        let day = self.day(files);
+        self.trees.insert(tree, day.clone());
+        Ok(day)
+    }
+
+    fn day(&self, files: Vec<ObjectId>) -> Day {
+        let mut tally = Tally::default();
+        for id in &files {
+            tally.add(&self.versions[id]);
+        }
+        Day {
+            files: files.into(),
+            tally,
+        }
     }
 
     /// Matching files in `tree`, sorted by path like run-once's file list.
@@ -263,7 +316,7 @@ impl History {
         Ok(files)
     }
 
-    fn tally_worktree(&mut self) -> Result<Tally> {
+    fn read_worktree(&mut self) -> Result<Day> {
         let mut files = Vec::new();
         for (dir, names) in &self.dirs {
             let Ok(entries) = fs::read_dir(self.workdir.join(dir)) else {
@@ -282,40 +335,28 @@ impl History {
         files.sort();
         files.dedup();
 
-        let mut tally = Tally::default();
+        let mut ids = Vec::new();
         for path in files {
             if let Some(bytes) = read_retrying(&self.workdir.join(&path))? {
-                tally.add(self.count(&bytes));
+                // Hashed like a blob, so a file unchanged since the last
+                // commit is recognized as that same version.
+                let id =
+                    gix::objs::compute_hash(self.repo.object_hash(), gix::objs::Kind::Blob, &bytes)
+                        .map_err(git)?;
+                if !self.versions.contains_key(&id) {
+                    self.versions.insert(id, self.version(&bytes));
+                }
+                ids.push(id);
             }
         }
-        Ok(tally)
+        Ok(self.day(ids))
     }
 
-    fn count_blob(&mut self, id: ObjectId) -> Result<FileCount> {
-        if let Some(count) = self.blobs.get(&id) {
-            return Ok(*count);
-        }
-        let blob = self.repo.find_blob(id).map_err(git)?;
-        let count = self.count(&blob.data);
-        self.blobs.insert(id, count);
-        Ok(count)
-    }
-
-    fn count(&self, bytes: &[u8]) -> FileCount {
+    fn version(&self, bytes: &[u8]) -> Version {
         // Lossy rather than strict: a stray invalid byte in one old commit
         // shouldn't make the whole chart fail.
         let text = String::from_utf8_lossy(bytes);
-        let mut builder = DocumentBuilder::new();
-        builder.apply(self.lexer.lex(&text));
-        let document = builder.finalize();
-        FileCount {
-            words: document.stats().subtree_paragraphs().total,
-            section: self
-                .heading
-                .as_deref()
-                .and_then(|heading| document.get_heading(heading))
-                .map(|section| section.stats().subtree_paragraphs().total),
-        }
+        Version::new(&text, &self.lexer, self.heading.as_deref())
     }
 }
 
@@ -481,7 +522,7 @@ mod tests {
                 .daily(&Clock::new(TimeZone::UTC), first, today)
                 .unwrap()
                 .into_iter()
-                .map(|tally| tally.map(|t| t.words))
+                .map(|day| day.map(|day| day.tally.words))
                 .collect()
         }
     }
@@ -597,7 +638,7 @@ mod tests {
             )
             .unwrap();
 
-        let tally = tallies[0].unwrap();
+        let tally = tallies[0].as_ref().unwrap().tally;
         assert_eq!((tally.words, tally.section), (7, Some(4)));
     }
 

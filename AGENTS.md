@@ -299,12 +299,14 @@ completely unchanged; `fmt.rs` stays the renderer for the classic path only.
 ## Progress chart (`src/progress.rs` + `src/progress/`, feature `progress`)
 
 `ncount -p <paths> [--days N] [-f ...]`: a *static* chart (printed once,
-not part of the TUI, per user) of net words written per day, read from
-the git history of the repo the paths live in. Added 2026-10-28.
+not part of the TUI, per user) of words added and words cut per day, read
+from the git history of the repo the paths live in. Added 2026-10-28;
+switched from net change to both sides 2026-11-09 (see "Added and cut").
 
 - **Feature-gated, off by default** (`progress = ["dep:gix", "dep:jiff",
-  "dep:globset"]`), to keep the base binary lean: 2.9MB → 4.2MB release,
-  144 → 236 crates. The `-p`/`--days` fields on `CommonArgs` are
+  "dep:globset", "dep:similar"]`), to keep the base binary lean: 2.9MB →
+  4.2MB release, 144 → 236 crates (`similar`, added later, is one
+  zero-dependency crate). The `-p`/`--days` fields on `CommonArgs` are
   `#[cfg(feature = "progress")]`, so a build without the feature doesn't
   advertise them. It's a flag, not a subcommand, to avoid reviving the
   subcommand-vs-`paths`-positional clash that dropping `tui` retired.
@@ -328,15 +330,49 @@ the git history of the repo the paths live in. Added 2026-10-28.
   Height is a fixed 10 rows (`PLOT_ROWS`), 40 braille dots of
   resolution. Terminal-height sizing (up to 30 rows) was tried
   2026-10-28 and dropped by the user: compact is more useful than tall.
-  The vertical scale is always the
-  window's own extremes (best day at the top, deepest cut at the bottom),
-  so heights only compare within one chart.
-  All datasets share one marker on purpose (user's call, 2026-10-28): with
+  Gains rise above the zero line, cuts hang below it, and a day can have
+  both. The two halves are **two `Chart`s stacked into one buffer** (the
+  upper one has no x labels, so ratatui draws no x axis for it): canvas
+  layers replace each other a whole cell at a time, so in one chart a
+  day's gain and cut bars would clobber each other in the cell holding
+  zero. `split_rows` shares the rows in proportion to the window's most
+  added vs. most cut (one scale for both), except that gains always keep
+  at least half: a purge day otherwise flattens every drafting day. Each
+  half's extreme reaches its edge, so heights only compare within one
+  chart. All datasets share one marker on purpose (user's call, 2026-10-28): with
   half-block bars over a braille zero line, gains started at the middle of
   the zero row, below the line's dots. Braille cells are two dots wide, so
   x bounds are in dots (`[0, 2 × plot − 1]`, mapping exactly) and each
-  day fills both dot columns of its cells. A zero-change day gets no bar,
-  only the zero line (`⣀` when zero sits at the bottom).
+  day fills both dot columns of its cells. A side with no words gets no
+  bar, only the zero line (always `⣀`, the bottom dot row of the upper
+  half).
+- **Added and cut** (`progress/diff.rs`, 2026-11-09, the user's idea):
+  net change hid drafting, since beat sheets (hundreds of words, in plain
+  text) are deleted as their scenes are written. Oct 5 in the real book:
+  +3,452 / −3,604, which the net chart showed as a −152 dip. Each day is
+  diffed against the day before, the charted files concatenated in path
+  order (so `-f` diffs just the section's paragraphs):
+  1. Paragraphs first (by exact text). A paragraph deleted in one place
+     and inserted unchanged in another counts as neither, which covers
+     reordered scenes and renamed files: `chapter.05.md` →
+     `defunct.05.md` sorts elsewhere and showed as ±41k before this.
+  2. Each remaining changed run is diffed word by word, so the
+     Yeneth → Ismay rename costs a word per mention, not a paragraph.
+     Tokens are `unicode_words()` over the paragraph text, whose pieces
+     (split by inline comments) are joined by `\n`, a hard UAX#29
+     boundary, so the token count equals `count_words`'s count exactly.
+  3. Inside a changed run, an equal stretch shorter than `MIN_KEPT` (3)
+     words with changes on both sides counts as cut-and-rewritten: plain
+     word diffs match the scattered "the"/"she"/"Aria" between a beat
+     sheet and its scene and undercount both (120–875 words a day on the
+     real book; `git diff --word-diff` has the same flaw).
+  Added − cut equals the net change by construction; `History::change`
+  `debug_assert`s it, and a debug build over all 400 days (`src`,
+  `src/chapter.*`, `-f 'Chapter IV'`) never trips it. `similar` with
+  `Algorithm::Histogram` and words interned to `u32`: Myers on `&str` was
+  ~2.5× slower (large beat sheet → scene runs), and totals differ by
+  under 0.5%. Text moved *out* of the charted set (scenes from a chapter
+  into `defunct-scenes.md` under `src/chapter.*`) is a real cut.
 - **Day semantics** (`progress/history.rs`): first-parent chain from HEAD,
   committer dates (amend keeps author date; committer date is when the
   words landed), local time zone via `jiff::tz::TimeZone::system()`, a
@@ -357,15 +393,23 @@ the git history of the repo the paths live in. Added 2026-10-28.
   is its target path). Overlapping args count a file once (run-once
   doesn't dedupe; deliberate difference).
 - **`-f`** follows the TUI's per-file first-match-wins rule, so counts
-  can be cached per blob. It falls back with the usual warning only when
+  can be cached per blob. The section's paragraphs are located through
+  `Document::find_heading` (`get_heading`'s match as an index into the
+  headings in document order) and run until the next heading at its level
+  or above. It falls back with the usual warning only when
   no charted day matches at all.
-- **Caching**: counts per blob ID and tallies per tree ID, so a day whose
-  tree didn't change is free and a commit that touched one chapter
-  re-counts one file. Real book (release): ~20ms for 30 days, ~72ms for
-  110, ~156ms for 400. Instrumented once: about two-thirds is word
-  counting (the existing pipeline over ~11MB of distinct blobs at 110
-  days), about one-third gix object reads. Parallel counting is the
-  remaining lever if it ever matters.
+- **Caching**: a lexed `diff::Version` (paragraph texts + counts) per blob
+  ID and a `Day` per tree ID, so a day whose tree didn't change is free
+  and a commit that touched one chapter re-reads one file. Working-tree
+  files are hashed as blobs (`gix::objs::compute_hash`) so an uncommitted
+  but unchanged file is the same version. The lexer is generic over what a
+  paragraph carries (`filter::Paragraph`: `u32` for the table/TUI, `Text`
+  for the chart), so the run-once path is unchanged (re-timed: same
+  ~4.3ms). Real book (release): ~24ms for 30 days, ~113ms for 110, ~251ms
+  for 400; reading history is ~70ms of the 110, diffing ~40ms. Before
+  diffing: ~20 / ~68 / ~168ms, about two-thirds word counting, one-third
+  gix object reads. Parallel counting is the remaining lever if it ever
+  matters.
 - **Validated** by a differential against run-once: every one of 400 days
   (205 distinct commits) of the real book, each compared with plain
   `ncount` over a `git archive` of `git log --first-parent -1

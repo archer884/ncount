@@ -1,4 +1,5 @@
 mod chart;
+mod diff;
 mod history;
 
 use std::io::{self, IsTerminal, Write};
@@ -11,12 +12,13 @@ use crate::cli::CommonArgs;
 use crate::error::Error;
 
 use chart::grouped;
-use history::{Clock, History, Tally};
+use diff::Change;
+use history::{Clock, Day, History};
 
 /// The window when stdout isn't a terminal and `--days` wasn't given.
 const FALLBACK_DAYS: usize = 30;
 
-/// `ncount -p`: a static chart of net words written per day, read from the
+/// `ncount -p`: a static chart of words added and cut per day, read from the
 /// charted files' git history, with today read from the working tree.
 pub fn run(args: &CommonArgs) -> Result<()> {
     if args.reads_stdin() {
@@ -49,22 +51,15 @@ pub fn run(args: &CommonArgs) -> Result<()> {
     // One extra day: the baseline the first charted day's change is from.
     let mut baseline = today.saturating_sub((days as i64).days());
     let mut history = History::open(args.paths(), args.filter())?;
-    let tallies = history.daily(&clock, baseline, today)?;
-    if tallies.iter().flatten().all(|tally| tally.files == 0) {
+    let mut days = history.daily(&clock, baseline, today)?;
+    if days.iter().flatten().all(|day| day.tally.files == 0) {
         return Err(Error::NothingMatched);
     }
 
     // Same fallback as the table and the TUI: a filter that matches nothing
     // (on any day) warns and charts everything.
     let section = match args.filter() {
-        Some(_)
-            if tallies
-                .iter()
-                .flatten()
-                .any(|tally| tally.section.is_some()) =>
-        {
-            true
-        }
+        Some(_) if days.iter().flatten().any(|day| day.tally.section.is_some()) => true,
         Some(filter) => {
             warn(&format!(
                 "no heading matching {filter:?} found; showing everything"
@@ -73,26 +68,31 @@ pub fn run(args: &CommonArgs) -> Result<()> {
         }
         None => false,
     };
-    let words = |tally: &Tally| match section {
-        true => tally.section.unwrap_or(0),
-        false => tally.words,
-    };
-    let mut totals: Vec<Option<u32>> = tallies.iter().map(|t| t.as_ref().map(words)).collect();
 
     // Sized to fit by default, but no wider than the history itself: start
     // at the first day with data. (An explicit `--days` keeps its blanks.)
     if args.days().is_none() {
-        let first = totals.iter().position(Option::is_some).unwrap_or(0);
-        totals.drain(..first);
+        let first = days.iter().position(Option::is_some).unwrap_or(0);
+        days.drain(..first);
         baseline = baseline.saturating_add((first as i64).days());
     }
 
-    let now = totals.last().copied().flatten().unwrap_or(0);
-    let deltas: Vec<Option<i64>> = totals
+    let words = |day: &Day| match section {
+        true => day.tally.section.unwrap_or(0),
+        false => day.tally.words,
+    };
+    let now = days.last().and_then(Option::as_ref).map_or(0, words);
+    let start = baseline.saturating_add(1.day());
+    let changes: Vec<Option<Change>> = days
         .windows(2)
-        .map(|pair| match (pair[0], pair[1]) {
-            (Some(before), Some(after)) => Some(i64::from(after) - i64::from(before)),
-            _ => None,
+        .zip(start.series(1.day()))
+        .map(|(pair, date)| {
+            let change = match pair {
+                [Some(before), Some(after)] => Some(history.change(before, after, section)),
+                _ => None,
+            };
+            tracing::debug!(%date, ?change);
+            change
         })
         .collect();
 
@@ -101,7 +101,7 @@ pub fn run(args: &CommonArgs) -> Result<()> {
         (true, Some(filter)) => format!("{filter}: "),
         _ => String::new(),
     };
-    if deltas.is_empty() {
+    if changes.is_empty() {
         writeln!(
             out,
             "{name}{} words; no earlier history yet",
@@ -110,25 +110,33 @@ pub fn run(args: &CommonArgs) -> Result<()> {
         return Ok(());
     }
 
-    let start = baseline.saturating_add(1.day());
-    let buffer = chart::render(start, &deltas, width);
+    let buffer = chart::render(start, &changes, width);
     write!(out, "{}", chart::to_text(&buffer, terminal.is_some()))?;
 
-    let first = totals.iter().flatten().next().copied().unwrap_or(0);
+    let mut total = Change::default();
+    for change in changes.iter().flatten() {
+        total += *change;
+    }
     let mut summary = format!(
-        "{name}{} words · {} over {} days",
+        "{name}{} words · +{} -{} (net {}) over {} days",
         grouped(now.into()),
-        signed(i64::from(now) - i64::from(first)),
-        deltas.len(),
+        grouped(total.added.into()),
+        grouped(total.cut.into()),
+        signed(total.net()),
+        changes.len(),
     );
-    let best = deltas
+    let best = changes
         .iter()
         .enumerate()
-        .filter_map(|(i, delta)| delta.map(|delta| (delta, i)))
+        .filter_map(|(i, change)| change.map(|change| (change.added, i)))
         .max();
-    if let Some((delta, i)) = best.filter(|&(delta, _)| delta > 0) {
+    if let Some((added, i)) = best.filter(|&(added, _)| added > 0) {
         let day = start.saturating_add((i as i64).days());
-        summary += &format!(" · best day {} ({})", signed(delta), day.strftime("%b %-d"));
+        summary += &format!(
+            " · best day +{} ({})",
+            grouped(added.into()),
+            day.strftime("%b %-d")
+        );
     }
     writeln!(out, "{summary}")?;
     Ok(())

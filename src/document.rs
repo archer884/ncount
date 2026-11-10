@@ -157,6 +157,28 @@ impl Document {
             .filter_map(|x| x.get_heading(heading));
         document.or_else(|| fallback.next())
     }
+
+    /// `get_heading`'s match, as its position among this tree's headings in
+    /// document order: the nth `LineEvent::Heading` the tree was built from.
+    /// (A heading's descendants follow it and precede its next sibling, so
+    /// pre-order is document order.)
+    #[cfg(feature = "progress")]
+    pub fn find_heading(&self, heading: &str) -> Option<usize> {
+        fn headed<'a>(document: &'a Document, out: &mut Vec<&'a Document>) {
+            if document.heading.is_some() {
+                out.push(document);
+            }
+            for subdocument in &document.subdocuments {
+                headed(subdocument, out);
+            }
+        }
+
+        let target = self.get_heading(heading)?;
+        let mut all = Vec::new();
+        headed(self, &mut all);
+        all.iter()
+            .position(|&document| std::ptr::eq(document, target))
+    }
 }
 
 impl Document {

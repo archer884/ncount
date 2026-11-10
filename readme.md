@@ -84,28 +84,28 @@ Quote glob patterns so the shell passes them through: `ncount -w 'src/chapter.*'
 
 Built only with the `progress` feature (`cargo install ncount --features progress`), which adds a pure-Rust git reader to the binary.
 
-`ncount -p <paths>` charts net words written per day, read from the git history of the repository the files live in:
+`ncount -p <paths>` charts the words added and cut each day, read from the git history of the repository the files live in:
 
 ```shell
 ❯ ncount -p 'src/chapter.*' --days 21 -f 'chapter iv'
-+1,769│   ⣿
-      │   ⣿
-      │   ⣿             ⣀
-      │   ⣿          ⣿  ⣿
-      │   ⣿          ⣿  ⣿
-      │   ⣿          ⣿  ⣿
-      │   ⣿          ⣿  ⣿ ⣀
-      │   ⣿          ⣿  ⣿ ⣿
-      │   ⣿⣶ ⣤       ⣿  ⣿ ⣿
-     0│⣀⣀⣀⣿⣿⣀⣿⣀⣀⣀⣀⣀⣀⣀⣿⣀⣀⣿⣤⣿⣀
++2,329│       ⣿     ⣤
+      │       ⣿     ⣿
+      │  ⣀  ⣤ ⣿⣶    ⣿
+      │  ⣿  ⣿ ⣿⣿    ⣿
+      │  ⣿  ⣿ ⣿⣿    ⣿      ⣿
+     0│⣀⣀⣿⣀⣀⣿⣀⣿⣿⣀⣀⣀⣀⣿⣀⣀⣿⣀⣀⣀⣿
+      │  ⠉  ⠉ ⣿⣿    ⣿  ⠉   ⣿
+      │       ⣿     ⣿      ⠛
+      │       ⣿
+-1,794│       ⣿
       └─────────────────────
-  Oct 8                today
-chapter iv: 22,978 words · +5,331 over 21 days · best day +1,769 (Oct 11)
+ Oct 20                today
+chapter iv: 25,742 words · +9,495 -3,678 (net +5,817) over 21 days · best day +2,329 (Oct 27)
 ```
 
 - Each past day counts the last commit made by its end, following first parents from `HEAD` and using committer dates, so amended commits land on the day they were amended. Days end at 4am, so late-night work belongs to the evening it started.
 - Today reads the working tree, so uncommitted words count.
-- Cuts hang below the zero line. Days before the history starts are left blank.
+- Words added rise above the zero line and words cut hang below it, so a scene drafted while its beat sheet is deleted shows both in full rather than the small difference between them. Edits count word by word (renaming a character costs one word per mention), and paragraphs moved unchanged, within a file or between charted files, count as neither. Days before the history starts are left blank.
 - By default the chart fits as many days as the terminal is wide (30 when piped). `--days` picks the window instead.
 - Paths and quoted globs select files the same way they do for the table, applied to every day's tree. A pattern picks up chapters added later, and the path of a file deleted since still counts toward the days it existed. `-f` charts one section (first file with the heading wins, as in watch mode).
 

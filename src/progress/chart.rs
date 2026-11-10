@@ -10,6 +10,8 @@ use ratatui::symbols::Marker;
 use ratatui::text::Line;
 use ratatui::widgets::{Axis, Chart, Dataset, GraphType, Widget};
 
+use super::diff::Change;
+
 /// Rows for the bars (four braille dots of height each); the x axis and
 /// its labels add two more. Deliberately short: a compact chart is more
 /// useful than a tall one.
@@ -37,93 +39,136 @@ pub fn bar_width(days: usize, width: usize) -> usize {
         .max(MIN_PLOT_WIDTH.div_ceil(days))
 }
 
-/// Net words per day as a bar chart: one or more columns per day, gains
-/// rising from a zero line and cuts hanging below it. `None` days (before
-/// the history starts) are left blank. Assumes `deltas` fits `width`, which
-/// the caller guarantees by sizing the window from `GUTTER`. The window's
-/// extremes reach the top and bottom.
-pub fn render(start: Date, deltas: &[Option<i64>], width: usize) -> Buffer {
-    let bar = bar_width(deltas.len(), width);
+/// Words added and cut per day as a bar chart: one or more columns per day,
+/// added words rising from a zero line and cut words hanging below it. `None`
+/// days (before the history starts) are left blank. Assumes `changes` fits
+/// `width`, which the caller guarantees by sizing the window from `GUTTER`.
+///
+/// The two halves are separate charts stacked on one axis: ratatui paints
+/// datasets as layers that replace each other a whole cell at a time, so a
+/// day with both bars in one chart would lose part of one where they meet.
+/// See `split_rows` for how the rows are shared; each half's extreme
+/// reaches its edge.
+pub fn render(start: Date, changes: &[Option<Change>], width: usize) -> Buffer {
+    let bar = bar_width(changes.len(), width);
     // Leave a gap between wide bars so neighboring days stay distinct.
     let fill = if bar >= 3 { bar - 1 } else { bar };
-    let plot = deltas.len() * bar;
+    let plot = changes.len() * bar;
 
-    let mut rises = Vec::new();
-    let mut falls = Vec::new();
-    for (day, delta) in deltas.iter().enumerate() {
-        // A zero day gets no bar, just the zero line under it.
-        let Some(delta) = delta.filter(|&delta| delta != 0) else {
-            continue;
-        };
-        let points = if delta < 0 { &mut falls } else { &mut rises };
+    let mut added = Vec::new();
+    let mut cut = Vec::new();
+    for (day, change) in changes.iter().enumerate() {
+        let Some(change) = change else { continue };
         let left = day * bar;
         // Braille cells are two dots wide; fill both so bars are solid.
         let dots = 2 * left..2 * (left + fill);
-        points.extend(dots.map(|dot| (dot as f64, delta as f64)));
+        // A side with no words gets no bar, just the zero line.
+        if change.added > 0 {
+            let height = f64::from(change.added);
+            added.extend(dots.clone().map(|dot| (dot as f64, height)));
+        }
+        if change.cut > 0 {
+            let depth = -f64::from(change.cut);
+            cut.extend(dots.map(|dot| (dot as f64, depth)));
+        }
     }
 
     // The zero line spans only days with data, so "no history yet" reads
     // differently from "wrote nothing".
-    let first = deltas.iter().position(Option::is_some).unwrap_or(0) * bar;
+    let first = changes.iter().position(Option::is_some).unwrap_or(0) * bar;
     let zero = [
         (2.0 * first as f64, 0.0),
         ((2 * plot).saturating_sub(1) as f64, 0.0),
     ];
 
-    let lo = deltas.iter().flatten().copied().min().unwrap_or(0).min(0);
-    let hi = deltas.iter().flatten().copied().max().unwrap_or(0).max(0);
-    // Bounds need some height even when every day was zero; the labels
-    // still show only real values.
-    let top = if lo == hi { 1 } else { hi };
-    let top_label = if lo == hi {
-        " ".repeat(LABEL_WIDTH)
-    } else {
-        label(hi)
-    };
+    let most_added = changes.iter().flatten().map(|c| c.added).max().unwrap_or(0);
+    let most_cut = changes.iter().flatten().map(|c| c.cut).max().unwrap_or(0);
+    let (upper_rows, lower_rows) = split_rows(most_added, most_cut);
 
     let mut x_labels = vec![Line::from(start.strftime("%b %-d").to_string())];
     if plot >= 40 {
-        let middle = start.saturating_add((deltas.len() as i64 / 2).days());
+        let middle = start.saturating_add((changes.len() as i64 / 2).days());
         x_labels.push(Line::from(middle.strftime("%b %-d").to_string()));
     }
     x_labels.push(Line::from("today"));
+    // In braille dots, two per column, so each maps exactly. Without
+    // labels, ratatui draws no x axis, which is how the upper half sits
+    // directly on the lower one.
+    let x_axis = |labels: Vec<Line<'static>>| {
+        Axis::default()
+            .style(MUTED)
+            .bounds([0.0, (2 * plot).saturating_sub(1).max(1) as f64])
+            .labels(labels)
+    };
+    let bars = |data, color| {
+        Dataset::default()
+            .marker(Marker::Braille)
+            .graph_type(GraphType::Bar)
+            .style(color)
+            .data(data)
+    };
 
-    let datasets = vec![
+    let width = (GUTTER + plot) as u16;
+    let mut buffer = Buffer::empty(Rect::new(0, 0, width, PLOT_ROWS + 2));
+
+    // Upper half: the zero line along its bottom edge, gains above. The
+    // bounds need some height even when nothing was added; the labels
+    // still show only real values. (An empty label draws nothing, so it
+    // can't cover the other when a one-row half puts both on one row.)
+    let top_label = match most_added {
+        0 => String::new(),
+        n => label(n.into()),
+    };
+    let upper = Chart::new(vec![
         Dataset::default()
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
             .style(MUTED)
             .data(&zero),
-        Dataset::default()
-            .marker(Marker::Braille)
-            .graph_type(GraphType::Bar)
-            .style(RISE)
-            .data(&rises),
-        Dataset::default()
-            .marker(Marker::Braille)
-            .graph_type(GraphType::Bar)
-            .style(FALL)
-            .data(&falls),
-    ];
-    let chart = Chart::new(datasets)
-        .x_axis(
-            Axis::default()
-                .style(MUTED)
-                // In braille dots, two per column, so each maps exactly.
-                .bounds([0.0, (2 * plot).saturating_sub(1).max(1) as f64])
-                .labels(x_labels),
-        )
-        .y_axis(
-            Axis::default()
-                .style(MUTED)
-                .bounds([lo as f64, top as f64])
-                .labels([label(lo), top_label]),
-        );
+        bars(&added, RISE),
+    ])
+    .x_axis(x_axis(match lower_rows {
+        0 => x_labels.clone(),
+        _ => Vec::new(),
+    }))
+    .y_axis(
+        Axis::default()
+            .style(MUTED)
+            .bounds([0.0, f64::from(most_added.max(1))])
+            .labels([label(0), top_label]),
+    );
+    let axis_rows = if lower_rows == 0 { 2 } else { 0 };
+    upper.render(Rect::new(0, 0, width, upper_rows + axis_rows), &mut buffer);
 
-    let area = Rect::new(0, 0, (GUTTER + plot) as u16, PLOT_ROWS + 2);
-    let mut buffer = Buffer::empty(area);
-    chart.render(area, &mut buffer);
+    // Lower half: cuts hanging from its top edge, then the x axis.
+    if lower_rows > 0 {
+        let lower = Chart::new(vec![bars(&cut, FALL)])
+            .x_axis(x_axis(x_labels))
+            .y_axis(
+                Axis::default()
+                    .style(MUTED)
+                    .bounds([-f64::from(most_cut), 0.0])
+                    .labels([label(-i64::from(most_cut)), String::new()]),
+            );
+        lower.render(Rect::new(0, upper_rows, width, lower_rows + 2), &mut buffer);
+    }
     buffer
+}
+
+/// Plot rows for (gains, cuts). In proportion to the window's most added
+/// and most cut, so both halves share one scale, except that gains always
+/// keep at least half the chart: a day that purges a whole chapter would
+/// otherwise flatten every drafting day to a sliver. Cuts beyond that are
+/// scaled down to fit. With no gains, the upper half is the zero line's
+/// one row; with no cuts, there's no lower half at all.
+fn split_rows(most_added: u32, most_cut: u32) -> (u16, u16) {
+    if most_cut == 0 {
+        return (PLOT_ROWS, 0);
+    }
+    let floor = if most_added == 0 { 1 } else { PLOT_ROWS / 2 };
+    let share = f64::from(most_added) / (f64::from(most_added) + f64::from(most_cut));
+    let upper = ((f64::from(PLOT_ROWS) * share).round() as u16).clamp(floor, PLOT_ROWS - 1);
+    (upper, PLOT_ROWS - upper)
 }
 
 /// The buffer as lines of text, with ANSI styling when `color` is set.
@@ -191,8 +236,21 @@ mod tests {
 
     use super::*;
 
-    fn plain(deltas: &[Option<i64>], width: usize) -> Vec<String> {
-        let buffer = render(date(2026, 3, 1), deltas, width);
+    /// A day that only added (positive) or only cut (negative).
+    fn net(words: i64) -> Option<Change> {
+        let n = words.unsigned_abs() as u32;
+        Some(match words {
+            0.. => Change { added: n, cut: 0 },
+            _ => Change { added: 0, cut: n },
+        })
+    }
+
+    fn both(added: u32, cut: u32) -> Option<Change> {
+        Some(Change { added, cut })
+    }
+
+    fn plain(changes: &[Option<Change>], width: usize) -> Vec<String> {
+        let buffer = render(date(2026, 3, 1), changes, width);
         to_text(&buffer, false)
             .lines()
             .map(str::to_string)
@@ -219,7 +277,7 @@ mod tests {
 
     #[test]
     fn rendered_height_is_rows_plus_axis_and_labels() {
-        let buffer = render(date(2026, 3, 1), &[Some(5), Some(-5)], 80);
+        let buffer = render(date(2026, 3, 1), &[net(5), net(-5)], 80);
         let lines = to_text(&buffer, false).lines().count();
         assert_eq!(lines, PLOT_ROWS as usize + 2);
     }
@@ -237,8 +295,8 @@ mod tests {
 
     #[test]
     fn renders_one_column_per_day_with_extremes_labeled() {
-        let deltas: Vec<_> = (0..20).map(|day| Some(day * 10 - 50)).collect();
-        let lines = plain(&deltas, GUTTER + 20);
+        let changes: Vec<_> = (0..20).map(|day| net(day * 10 - 50)).collect();
+        let lines = plain(&changes, GUTTER + 20);
 
         assert!(lines[0].starts_with("  +140"), "{lines:#?}");
         assert!(lines[9].starts_with("   -50"), "{lines:#?}");
@@ -256,7 +314,7 @@ mod tests {
 
     #[test]
     fn days_without_history_stay_blank() {
-        let lines = plain(&[None, None, None, None, Some(10), Some(20)], GUTTER + 18);
+        let lines = plain(&[None, None, None, None, net(10), net(20)], GUTTER + 18);
         let plot: Vec<Vec<char>> = lines[..10]
             .iter()
             .map(|l| l.chars().skip(GUTTER).collect())
@@ -271,7 +329,7 @@ mod tests {
 
     #[test]
     fn a_day_without_change_gets_no_bar() {
-        let lines = plain(&[Some(10), Some(0), Some(10)], 80);
+        let lines = plain(&[net(10), net(0), net(10)], 80);
         let bar = bar_width(3, 80);
         let zero_row = &lines[PLOT_ROWS as usize - 1];
         let cell = |day: usize| zero_row.chars().nth(GUTTER + day * bar).unwrap();
@@ -284,7 +342,7 @@ mod tests {
 
     #[test]
     fn all_zero_days_render_without_panicking() {
-        let lines = plain(&[Some(0), Some(0)], 80);
+        let lines = plain(&[net(0), net(0)], 80);
         assert!(lines.iter().any(|l| l.starts_with("     0")), "{lines:#?}");
         // No made-up "+1" from the padding that keeps the bounds open.
         assert!(lines[0].starts_with("      │"), "{lines:#?}");
@@ -292,8 +350,56 @@ mod tests {
 
     #[test]
     fn a_single_day_renders() {
-        let lines = plain(&[Some(42)], 80);
+        let lines = plain(&[net(42)], 80);
         assert!(lines[0].starts_with("   +42│"), "{lines:#?}");
+        assert!(lines.last().unwrap().ends_with("today"), "{lines:#?}");
+    }
+
+    #[test]
+    fn a_day_with_both_draws_both_bars_whole() {
+        // Drafted a scene, deleted its beat sheet: one bar each way.
+        let lines = plain(&[both(0, 0), both(400, 400), both(0, 0)], GUTTER + 3);
+        let (upper, _) = split_rows(400, 400);
+        let bar = bar_width(3, GUTTER + 3);
+        let column = |row: usize, day: usize| lines[row].chars().nth(GUTTER + day * bar).unwrap();
+
+        // Solid from the top of the chart to the bottom of the plot,
+        // including the zero line's row, where neither half covers the other.
+        for row in 0..PLOT_ROWS as usize {
+            assert_eq!(column(row, 1), '⣿', "row {row}: {lines:#?}");
+        }
+        assert_eq!(column(upper as usize - 1, 0), '⣀', "{lines:#?}");
+        assert!(lines[0].starts_with("  +400"), "{lines:#?}");
+        assert!(
+            lines[upper as usize - 1].starts_with("     0"),
+            "{lines:#?}"
+        );
+        assert!(
+            lines[PLOT_ROWS as usize - 1].starts_with("  -400"),
+            "{lines:#?}"
+        );
+        assert_eq!(lines.len(), PLOT_ROWS as usize + 2);
+    }
+
+    #[test]
+    fn rows_split_by_scale_but_gains_keep_half() {
+        assert_eq!(split_rows(500, 0), (PLOT_ROWS, 0));
+        assert_eq!(split_rows(900, 100), (9, 1));
+        assert_eq!(split_rows(300, 200), (6, 4));
+        // A purged chapter doesn't flatten the drafting days.
+        assert_eq!(split_rows(500, 9000), (PLOT_ROWS / 2, PLOT_ROWS / 2));
+        // Nothing added: the zero line gets one row at the top.
+        assert_eq!(split_rows(0, 300), (1, PLOT_ROWS - 1));
+    }
+
+    #[test]
+    fn only_cuts_render_with_the_zero_line_on_top() {
+        let lines = plain(&[net(-30), net(-10)], 80);
+        assert!(lines[0].starts_with("     0│"), "{lines:#?}");
+        assert!(
+            lines[PLOT_ROWS as usize - 1].starts_with("   -30"),
+            "{lines:#?}"
+        );
         assert!(lines.last().unwrap().ends_with("today"), "{lines:#?}");
     }
 }

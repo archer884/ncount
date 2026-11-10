@@ -30,6 +30,16 @@ impl TextFilter {
     /// paragraphs: text is bundled together up to the next real
     /// (non-removed) line break.
     pub fn lex<'a>(&'a self, s: &'a str) -> impl Iterator<Item = LineEvent> + 'a {
+        self.lex_as(s)
+    }
+
+    /// `lex`, with each paragraph built as a `P`: just its word count for
+    /// `lex`, or more where a caller needs it (the progress chart keeps
+    /// the text, to diff it).
+    pub fn lex_as<'a, P: Paragraph + 'a>(
+        &'a self,
+        s: &'a str,
+    ) -> impl Iterator<Item = LineEvent<P>> + 'a {
         Lines {
             chunks: Chunks {
                 text: s,
@@ -46,9 +56,28 @@ impl TextFilter {
 /// One heading or one paragraph, already fully assembled from however many
 /// chunks it took to get there.
 #[derive(Debug, Clone, PartialEq)]
-pub enum LineEvent {
+pub enum LineEvent<P = u32> {
     Heading(CompactString, i32),
-    Paragraph(u32),
+    Paragraph(P),
+}
+
+/// What a paragraph event carries, built from the paragraph's pieces: one
+/// per stretch of surviving text, more than one only when a comment or
+/// footnote sat inside the line. Each piece is counted on its own.
+pub trait Paragraph {
+    fn start(piece: &str) -> Self;
+    fn extend(&mut self, piece: &str);
+}
+
+/// The word count alone, which is all the table and the TUI need.
+impl Paragraph for u32 {
+    fn start(piece: &str) -> Self {
+        count_words(piece)
+    }
+
+    fn extend(&mut self, piece: &str) {
+        *self += count_words(piece);
+    }
 }
 
 /// Walks `text`, skipping over `matches`, yielding the surviving text
@@ -90,10 +119,10 @@ impl<'a> Iterator for Chunks<'a> {
     }
 }
 
-enum LineMode {
+enum LineMode<P> {
     Undecided,
     Heading(CompactString),
-    Paragraph(u32),
+    Paragraph(P),
 }
 
 /// Bundles a `Chunks` stream into complete heading/paragraph events, one per
@@ -106,14 +135,14 @@ enum LineMode {
 /// doesn't, the match spliced two textual halves together inline (a comment
 /// sitting mid-sentence), so the next chunk's first line must be merged
 /// onto this chunk's dangling last line rather than treated separately.
-struct Lines<'a> {
+struct Lines<'a, P> {
     chunks: Chunks<'a>,
     current: Option<(Peekable<std::str::Lines<'a>>, bool)>,
-    pending_mode: LineMode,
+    pending_mode: LineMode<P>,
     pending_non_whitespace: bool,
 }
 
-impl Lines<'_> {
+impl<P: Paragraph> Lines<'_, P> {
     fn absorb(&mut self, line: &str) {
         if !line.trim().is_empty() {
             self.pending_non_whitespace = true;
@@ -123,15 +152,15 @@ impl Lines<'_> {
                 self.pending_mode = if line.starts_with('#') {
                     LineMode::Heading(CompactString::from(line))
                 } else {
-                    LineMode::Paragraph(count_words(line))
+                    LineMode::Paragraph(P::start(line))
                 };
             }
             LineMode::Heading(buf) => buf.push_str(line),
-            LineMode::Paragraph(count) => *count += count_words(line),
+            LineMode::Paragraph(paragraph) => paragraph.extend(line),
         }
     }
 
-    fn take_pending(&mut self) -> Option<LineEvent> {
+    fn take_pending(&mut self) -> Option<LineEvent<P>> {
         let non_whitespace = std::mem::take(&mut self.pending_non_whitespace);
         let mode = std::mem::replace(&mut self.pending_mode, LineMode::Undecided);
         if !non_whitespace {
@@ -143,16 +172,16 @@ impl Lines<'_> {
                 let text = raw.trim_start_matches('#').trim();
                 LineEvent::Heading(CompactString::from(text), level)
             }
-            LineMode::Paragraph(count) => LineEvent::Paragraph(count),
+            LineMode::Paragraph(paragraph) => LineEvent::Paragraph(paragraph),
             LineMode::Undecided => unreachable!("non_whitespace implies mode was set"),
         })
     }
 }
 
-impl<'a> Iterator for Lines<'a> {
-    type Item = LineEvent;
+impl<P: Paragraph> Iterator for Lines<'_, P> {
+    type Item = LineEvent<P>;
 
-    fn next(&mut self) -> Option<LineEvent> {
+    fn next(&mut self) -> Option<LineEvent<P>> {
         loop {
             if self.current.is_none() {
                 loop {

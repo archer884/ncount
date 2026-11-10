@@ -26,6 +26,7 @@ owo-colors = "4.3.0"
 prettytable-rs = "0.10.0"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 regex = "1.13.1"
+similar = { version = "3.2.1", default-features = false, optional = true }
 thiserror = "2.0.20"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -33,7 +34,7 @@ unicode-segmentation = "1.13.3"
 
 [features]
 # `ncount -p`: chart words per day from the manuscript's git history.
-progress = ["dep:gix", "dep:jiff", "dep:globset"]
+progress = ["dep:gix", "dep:jiff", "dep:globset", "dep:similar"]
 
 [dev-dependencies]
 tempfile = "3"
